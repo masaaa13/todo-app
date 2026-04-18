@@ -42,7 +42,8 @@
   flex-wrap: wrap;
 }
 
-.prioritySelect {
+.prioritySelect,
+.reminderSelect {
   height: 38px;
   padding: 0 10px;
   font-size: 0.85rem;
@@ -56,21 +57,18 @@
   flex-shrink: 0;
 }
 
-.prioritySelect:focus {
+.prioritySelect:focus,
+.reminderSelect:focus {
   border-color: var(--color-accent);
 }
 
-/* Priority-colored select text */
-.prioritySelect[data-priority='high'] {
-  color: #dc2626;
-}
+.prioritySelect[data-priority='high'] { color: #dc2626; }
+.prioritySelect[data-priority='medium'] { color: #b45309; }
+.prioritySelect[data-priority='low'] { color: #6b7280; }
 
-.prioritySelect[data-priority='medium'] {
-  color: #b45309;
-}
-
-.prioritySelect[data-priority='low'] {
-  color: #6b7280;
+.reminderSelect:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .dateInput {
@@ -83,7 +81,7 @@
   border-radius: 8px;
   outline: none;
   flex: 1;
-  min-width: 130px;
+  min-width: 160px;
   transition: border-color 0.18s;
 }
 
@@ -119,8 +117,9 @@
   cursor: not-allowed;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .prioritySelect,
+  .reminderSelect,
   .dateInput {
     flex: 1;
   }

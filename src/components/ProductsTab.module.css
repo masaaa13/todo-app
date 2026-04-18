@@ -1,0 +1,384 @@
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sectionTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--color-border);
+  color: var(--color-text-sub);
+  border-radius: 99px;
+}
+
+.addBtn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.addBtn:hover { background: var(--color-accent-dark); }
+
+/* ── Form ── */
+.form {
+  background: #f8f9fc;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fullWidth { grid-column: 1 / -1; }
+
+.fieldLabel {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+}
+
+.input,
+.select {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.83rem;
+  color: var(--color-text);
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input:focus,
+.select:focus { border-color: var(--color-accent); }
+
+.input:disabled { opacity: 0.45; background: #f3f4f6; }
+
+.textarea {
+  padding: 8px 10px;
+  font-size: 0.83rem;
+  color: var(--color-text);
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.textarea:focus { border-color: var(--color-accent); }
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.submitBtn {
+  height: 34px;
+  padding: 0 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.submitBtn:hover:not(:disabled) { background: var(--color-accent-dark); }
+.submitBtn:disabled { background: var(--color-accent-disabled); cursor: not-allowed; }
+
+.cancelBtn {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  color: var(--color-text-sub);
+  background: transparent;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cancelBtn:hover { background: #f0f2f8; }
+
+/* ── Product list ── */
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--color-text-sub);
+  font-size: 0.88rem;
+}
+
+.productCard {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: box-shadow 0.15s;
+}
+
+.productCard:hover { box-shadow: var(--shadow-hover); }
+
+.productHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.productMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sku {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.productName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.categoryBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+
+.categoryBadge[data-category='normal']      { background: #eff6ff; color: #1d4ed8; }
+.categoryBadge[data-category='reservation'] { background: #fff7ed; color: #c2410c; }
+.categoryBadge[data-category='collab']      { background: #faf5ff; color: #7c3aed; }
+
+.productActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.expandBtn,
+.editSmallBtn,
+.deleteSmallBtn,
+.doneSmallBtn,
+.addSmallBtn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-sub);
+}
+
+.expandBtn:hover,
+.editSmallBtn:hover,
+.addSmallBtn:hover { background: #f0f2f8; color: var(--color-text); }
+
+.expandBtn[data-active] { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+
+.deleteSmallBtn { color: var(--color-danger); border-color: #fca5a5; }
+.deleteSmallBtn:hover { background: var(--color-danger-bg); }
+
+.doneSmallBtn { color: var(--color-success); border-color: #86efac; }
+.doneSmallBtn:hover { background: #f0fdf4; }
+
+.productMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+}
+
+.regBadge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.regBadge[data-status='registered']  { background: #dcfce7; color: #16a34a; }
+.regBadge[data-status='pending']     { background: #fef3c7; color: #d97706; }
+.regBadge[data-status='not_needed']  { background: #f3f4f6; color: #6b7280; }
+
+.productNotes {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-sub);
+  line-height: 1.5;
+}
+
+/* ── Reserve stock ── */
+.stockSection {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.stockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stockTitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+}
+
+.stockForm {
+  background: #fafbfd;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.stockGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.checkRow {
+  display: flex;
+  flex-direction: row !important;
+  gap: 16px;
+  align-items: center;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.emptySmall {
+  font-size: 0.78rem;
+  color: var(--color-text-sub);
+  margin: 4px 0;
+}
+
+.stockRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stockRow:last-child { border-bottom: none; }
+
+.stockRow[data-switch] { background: #fffbeb; border-radius: 6px; padding: 7px 8px; }
+
+.stockInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.stockActions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.stockTypeBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.stockTypeBadge[data-type='initial']    { background: #eff6ff; color: #1d4ed8; }
+.stockTypeBadge[data-type='additional'] { background: #faf5ff; color: #7c3aed; }
+
+.stockQty  { font-size: 0.8rem; font-weight: 600; color: var(--color-text); }
+.stockDate { font-size: 0.76rem; color: var(--color-text-sub); }
+
+.futureBadge { font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #d97706; }
+.futureDone  { font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #16a34a; }
+.switchBadge { font-size: 0.72rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #fef9c3; color: #ca8a04; }
+
+@media (max-width: 480px) {
+  .formGrid,
+  .stockGrid { grid-template-columns: 1fr; }
+  .checkRow { flex-direction: column !important; align-items: flex-start; }
+}

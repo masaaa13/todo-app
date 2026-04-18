@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import type { Task, TaskInput } from '../types/task';
 import { PRIORITIES, PRIORITY_LABELS } from '../types/priority';
 import type { Priority } from '../types/priority';
-import { getDueStatus, formatDueDate } from '../utils/dateUtils';
+import { REMINDER_OPTIONS, getReminderLabel } from '../types/reminder';
+import { getDueStatus, formatDueAt, toDatetimeLocal, datetimeLocalToISO } from '../utils/dateUtils';
 import styles from './TaskItem.module.css';
 
 type Props = {
@@ -12,13 +13,14 @@ type Props = {
   onEdit: (id: string, input: TaskInput) => void;
 };
 
-const DUE_LABELS = { overdue: '期限切れ', today: '今日', future: '', none: '' } as const;
+const DUE_LABELS = { overdue: '期限切れ', soon: '間もなく', future: '', none: '' } as const;
 
 export function TaskItem({ task, onToggle, onDelete, onEdit }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(task.text);
   const [editPriority, setEditPriority] = useState<Priority>(task.priority);
-  const [editDueDate, setEditDueDate] = useState(task.dueDate ?? '');
+  const [editDueAt, setEditDueAt] = useState(task.dueAt ? toDatetimeLocal(task.dueAt) : '');
+  const [editReminder, setEditReminder] = useState<number | null>(task.reminderOffsetMinutes);
   const inputRef = useRef<HTMLInputElement>(null);
   const checkboxId = `task-cb-${task.id}`;
 
@@ -29,27 +31,31 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: Props) {
   const handleEditStart = () => {
     setEditText(task.text);
     setEditPriority(task.priority);
-    setEditDueDate(task.dueDate ?? '');
+    setEditDueAt(task.dueAt ? toDatetimeLocal(task.dueAt) : '');
+    setEditReminder(task.reminderOffsetMinutes);
     setIsEditing(true);
   };
 
   const handleSave = () => {
     const trimmed = editText.trim();
     if (!trimmed) return;
-    onEdit(task.id, { text: trimmed, priority: editPriority, dueDate: editDueDate || null });
+    onEdit(task.id, {
+      text: trimmed,
+      priority: editPriority,
+      dueAt: editDueAt ? datetimeLocalToISO(editDueAt) : null,
+      reminderOffsetMinutes: editDueAt ? editReminder : null,
+    });
     setIsEditing(false);
   };
 
-  const handleCancel = () => {
-    setIsEditing(false);
-  };
+  const handleCancel = () => setIsEditing(false);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSave();
     if (e.key === 'Escape') handleCancel();
   };
 
-  const dueStatus = getDueStatus(task.dueDate);
+  const dueStatus = getDueStatus(task.dueAt);
   const dueLabel = DUE_LABELS[dueStatus];
 
   if (isEditing) {
@@ -74,24 +80,29 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: Props) {
               data-priority={editPriority}
             >
               {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {PRIORITY_LABELS[p]}優先
-                </option>
+                <option key={p} value={p}>{PRIORITY_LABELS[p]}優先</option>
               ))}
             </select>
             <input
-              type="date"
+              type="datetime-local"
               className={styles.editDate}
-              value={editDueDate}
-              onChange={(e) => setEditDueDate(e.target.value)}
-              aria-label="期限日"
+              value={editDueAt}
+              onChange={(e) => setEditDueAt(e.target.value)}
+              aria-label="期限日時"
             />
+            <select
+              className={styles.editSelect}
+              value={editReminder ?? ''}
+              onChange={(e) => setEditReminder(e.target.value === '' ? null : Number(e.target.value))}
+              disabled={!editDueAt}
+              aria-label="リマインダー"
+            >
+              {REMINDER_OPTIONS.map((opt) => (
+                <option key={String(opt.value)} value={opt.value ?? ''}>{opt.label}</option>
+              ))}
+            </select>
             <div className={styles.editActions}>
-              <button
-                className={styles.saveButton}
-                onClick={handleSave}
-                disabled={!editText.trim()}
-              >
+              <button className={styles.saveButton} onClick={handleSave} disabled={!editText.trim()}>
                 保存
               </button>
               <button className={styles.cancelButton} onClick={handleCancel} aria-label="キャンセル">
@@ -126,18 +137,10 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: Props) {
             </span>
           </label>
           <div className={styles.actions}>
-            <button
-              className={styles.editButton}
-              onClick={handleEditStart}
-              aria-label={`${task.text}を編集`}
-            >
+            <button className={styles.editButton} onClick={handleEditStart} aria-label={`${task.text}を編集`}>
               編集
             </button>
-            <button
-              className={styles.deleteButton}
-              onClick={() => onDelete(task.id)}
-              aria-label={`${task.text}を削除`}
-            >
+            <button className={styles.deleteButton} onClick={() => onDelete(task.id)} aria-label={`${task.text}を削除`}>
               削除
             </button>
           </div>
@@ -146,10 +149,15 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: Props) {
           <span className={styles.priorityBadge} data-priority={task.priority}>
             {PRIORITY_LABELS[task.priority]}
           </span>
-          {task.dueDate && (
+          {task.dueAt && (
             <span className={styles.dueBadge} data-due-status={dueStatus}>
-              〆 {formatDueDate(task.dueDate)}
+              〆 {formatDueAt(task.dueAt)}
               {dueLabel && <span className={styles.dueLabel}>{dueLabel}</span>}
+            </span>
+          )}
+          {task.dueAt && task.reminderOffsetMinutes !== null && (
+            <span className={styles.reminderBadge}>
+              🔔 {getReminderLabel(task.reminderOffsetMinutes)}
             </span>
           )}
         </div>

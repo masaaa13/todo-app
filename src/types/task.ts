@@ -5,7 +5,8 @@ export type Task = {
   text: string;
   completed: boolean;
   priority: Priority;
-  dueDate: string | null;
+  dueAt: string | null;
+  reminderOffsetMinutes: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -13,5 +14,6 @@ export type Task = {
 export type TaskInput = {
   text: string;
   priority: Priority;
-  dueDate: string | null;
+  dueAt: string | null;
+  reminderOffsetMinutes: number | null;
 };

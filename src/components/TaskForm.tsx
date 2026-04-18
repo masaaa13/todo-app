@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { TaskInput } from '../types/task';
 import { PRIORITIES, PRIORITY_LABELS } from '../types/priority';
 import type { Priority } from '../types/priority';
+import { REMINDER_OPTIONS } from '../types/reminder';
+import { datetimeLocalToISO } from '../utils/dateUtils';
 import styles from './TaskForm.module.css';
 
 type Props = {
@@ -11,15 +13,22 @@ type Props = {
 export function TaskForm({ onAdd }: Props) {
   const [text, setText] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
-  const [dueDate, setDueDate] = useState('');
+  const [dueAt, setDueAt] = useState('');
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState<number | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
-    onAdd({ text, priority, dueDate: dueDate || null });
+    onAdd({
+      text,
+      priority,
+      dueAt: dueAt ? datetimeLocalToISO(dueAt) : null,
+      reminderOffsetMinutes: dueAt ? reminderOffsetMinutes : null,
+    });
     setText('');
     setPriority('medium');
-    setDueDate('');
+    setDueAt('');
+    setReminderOffsetMinutes(null);
   };
 
   return (
@@ -51,12 +60,25 @@ export function TaskForm({ onAdd }: Props) {
           ))}
         </select>
         <input
-          type="date"
+          type="datetime-local"
           className={styles.dateInput}
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          aria-label="期限日"
+          value={dueAt}
+          onChange={(e) => setDueAt(e.target.value)}
+          aria-label="期限日時"
         />
+        <select
+          className={styles.reminderSelect}
+          value={reminderOffsetMinutes ?? ''}
+          onChange={(e) => setReminderOffsetMinutes(e.target.value === '' ? null : Number(e.target.value))}
+          disabled={!dueAt}
+          aria-label="リマインダー"
+        >
+          {REMINDER_OPTIONS.map((opt) => (
+            <option key={String(opt.value)} value={opt.value ?? ''}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <button className={styles.submitButton} type="submit" disabled={!text.trim()}>
           追加
         </button>

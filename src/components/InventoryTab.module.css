@@ -1,0 +1,327 @@
+/* ── Shared form ── */
+.form {
+  background: #f8f9fc;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.formField { display: flex; flex-direction: column; gap: 4px; }
+.fullWidth  { grid-column: 1 / -1; }
+
+.fieldLabel {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+}
+
+.input, .select {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.83rem;
+  color: var(--color-text);
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input:focus, .select:focus { border-color: var(--color-accent); }
+
+.formActions { display: flex; gap: 8px; margin-top: 12px; }
+
+.submitBtn {
+  height: 34px;
+  padding: 0 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.submitBtn:hover { background: var(--color-accent-dark); }
+
+.cancelBtn {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 0.85rem;
+  color: var(--color-text-sub);
+  background: transparent;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cancelBtn:hover { background: #f0f2f8; }
+
+/* ── Section headers ── */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sectionTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--color-border);
+  color: var(--color-text-sub);
+  border-radius: 99px;
+}
+
+.alertCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #d97706;
+  border-radius: 99px;
+}
+
+.addBtn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.addBtn:hover { background: var(--color-accent-dark); }
+
+/* ── Candidate list ── */
+.empty {
+  text-align: center;
+  padding: 32px 0;
+  color: var(--color-text-sub);
+  font-size: 0.88rem;
+}
+
+.emptySmall {
+  padding: 12px 0;
+  color: var(--color-text-sub);
+  font-size: 0.82rem;
+}
+
+.candidateList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.candidateCard {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  transition: box-shadow 0.15s;
+}
+
+.candidateCard:hover { box-shadow: var(--shadow-hover); }
+
+.candidateHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.candidateMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.priorityBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
+.priorityBadge[data-priority='high']   { background: var(--color-priority-high-bg);   color: var(--color-priority-high); }
+.priorityBadge[data-priority='medium'] { background: var(--color-priority-medium-bg); color: var(--color-priority-medium); }
+.priorityBadge[data-priority='low']    { background: var(--color-priority-low-bg);    color: var(--color-priority-low); }
+
+.statusBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.statusBadge[data-status='A']          { background: #dcfce7; color: #16a34a; }
+.statusBadge[data-status='B']          { background: #fef3c7; color: #d97706; }
+.statusBadge[data-status='C']          { background: #f3f4f6; color: #6b7280; }
+.statusBadge[data-status='considering'] { background: #eff6ff; color: #1d4ed8; }
+.statusBadge[data-status='approved']   { background: #dcfce7; color: #16a34a; }
+.statusBadge[data-status='rejected']   { background: #fef2f2; color: #b91c1c; }
+
+.sku {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.productName {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.editSmallBtn, .deleteSmallBtn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 0.74rem;
+  border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+
+.editSmallBtn { color: var(--color-text-sub); }
+.editSmallBtn:hover { background: #f0f2f8; color: var(--color-text); }
+
+.deleteSmallBtn { color: var(--color-danger); border-color: #fca5a5; }
+.deleteSmallBtn:hover { background: var(--color-danger-bg); }
+
+.reason {
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+
+.comment {
+  margin: 3px 0 0;
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+}
+
+/* ── Switch section ── */
+.switchSection {
+  border-top: 1.5px dashed var(--color-border);
+  padding-top: 18px;
+  margin-top: 4px;
+}
+
+.switchList {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.switchCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 9px;
+}
+
+.switchMain {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.stockTypeBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.stockTypeBadge[data-type='initial']    { background: #eff6ff; color: #1d4ed8; }
+.stockTypeBadge[data-type='additional'] { background: #faf5ff; color: #7c3aed; }
+
+.qty { font-size: 0.82rem; font-weight: 600; color: var(--color-text); }
+
+.dateTag {
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+}
+
+.doneBtn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-success);
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.doneBtn:hover { background: #dcfce7; }
+
+@media (max-width: 480px) {
+  .formGrid { grid-template-columns: 1fr; }
+}

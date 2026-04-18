@@ -1,13 +1,14 @@
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  text        TEXT        NOT NULL,
-  completed   BOOLEAN     NOT NULL DEFAULT FALSE,
-  priority    TEXT        NOT NULL DEFAULT 'medium'
-                          CHECK (priority IN ('high', 'medium', 'low')),
-  due_date    DATE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  text                    TEXT        NOT NULL,
+  completed               BOOLEAN     NOT NULL DEFAULT FALSE,
+  priority                TEXT        NOT NULL DEFAULT 'medium'
+                                      CHECK (priority IN ('high', 'medium', 'low')),
+  due_at                  TIMESTAMPTZ,
+  reminder_offset_minutes INTEGER,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- (Future) Add user_id when auth is enabled:

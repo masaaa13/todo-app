@@ -14,11 +14,11 @@ function sortActive(active: Task[], sortBy: SortType): Task[] {
 
     case 'dueDate':
     default: {
-      const withDue = active.filter((t) => t.dueDate !== null);
-      const withoutDue = active.filter((t) => t.dueDate === null);
+      const withDue = active.filter((t) => t.dueAt !== null);
+      const withoutDue = active.filter((t) => t.dueAt === null);
 
       withDue.sort((a, b) => {
-        const dc = (a.dueDate as string).localeCompare(b.dueDate as string);
+        const dc = (a.dueAt as string).localeCompare(b.dueAt as string);
         if (dc !== 0) return dc;
         return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
       });
@@ -34,7 +34,6 @@ export function sortTasks(tasks: Task[], sortBy: SortType = 'dueDate'): Task[] {
   const active = tasks.filter((t) => !t.completed);
   const done = tasks.filter((t) => t.completed);
 
-  // 完了済みは完了日時が新しい順
   const sortedDone = [...done].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return [...sortActive(active, sortBy), ...sortedDone];

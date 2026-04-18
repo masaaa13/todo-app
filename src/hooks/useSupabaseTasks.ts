@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Task, TaskInput } from '../types/task';
 import type { Priority } from '../types/priority';
+import type { User } from '@supabase/supabase-js';
 
 type TaskRow = {
   id: string;
   text: string;
   completed: boolean;
   priority: string;
-  due_date: string | null;
+  due_at: string | null;
+  reminder_offset_minutes: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -19,13 +21,14 @@ function rowToTask(row: TaskRow): Task {
     text: row.text,
     completed: row.completed,
     priority: row.priority as Priority,
-    dueDate: row.due_date,
+    dueAt: row.due_at,
+    reminderOffsetMinutes: row.reminder_offset_minutes,
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
   };
 }
 
-export function useSupabaseTasks() {
+export function useSupabaseTasks(user: User | null) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,13 @@ export function useSupabaseTasks() {
       setLoading(false);
       return;
     }
+    if (!user) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
 
     supabase
       .from('tasks')
@@ -46,8 +56,9 @@ export function useSupabaseTasks() {
         setLoading(false);
       });
 
+    // Channel name scoped to user prevents cross-user leakage on shared clients
     const channel = supabase
-      .channel('tasks-realtime')
+      .channel(`tasks-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const incoming = rowToTask(payload.new as TaskRow);
@@ -62,24 +73,28 @@ export function useSupabaseTasks() {
       .subscribe();
 
     return () => { supabase!.removeChannel(channel); };
-  }, []);
+  }, [user?.id]);
 
-  const addTask = async ({ text, priority, dueDate }: TaskInput) => {
-    if (!supabase) return;
+  const addTask = async ({ text, priority, dueAt, reminderOffsetMinutes }: TaskInput) => {
+    if (!supabase || !user) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    const optimistic: Task = { id, text: trimmed, completed: false, priority, dueDate, createdAt: Date.now(), updatedAt: Date.now() };
+    const optimistic: Task = { id, text: trimmed, completed: false, priority, dueAt, reminderOffsetMinutes, createdAt: Date.now(), updatedAt: Date.now() };
     setTasks((prev) => [...prev, optimistic]);
 
-    const { error: err } = await supabase.from('tasks').insert({ id, text: trimmed, completed: false, priority, due_date: dueDate, created_at: now, updated_at: now });
+    const { error: err } = await supabase.from('tasks').insert({
+      id, user_id: user.id, text: trimmed, completed: false, priority,
+      due_at: dueAt, reminder_offset_minutes: reminderOffsetMinutes,
+      created_at: now, updated_at: now,
+    });
     if (err) { setTasks((prev) => prev.filter((t) => t.id !== id)); setError(err.message); }
   };
 
   const toggleTask = async (id: string) => {
-    if (!supabase) return;
+    if (!supabase || !user) return;
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
 
@@ -90,7 +105,7 @@ export function useSupabaseTasks() {
   };
 
   const deleteTask = async (id: string) => {
-    if (!supabase) return;
+    if (!supabase || !user) return;
     const original = tasks.find((t) => t.id === id);
 
     setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -99,20 +114,23 @@ export function useSupabaseTasks() {
     if (err && original) { setTasks((prev) => [...prev, original]); setError(err.message); }
   };
 
-  const editTask = async (id: string, { text, priority, dueDate }: TaskInput) => {
-    if (!supabase) return;
+  const editTask = async (id: string, { text, priority, dueAt, reminderOffsetMinutes }: TaskInput) => {
+    if (!supabase || !user) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     const original = tasks.find((t) => t.id === id);
 
-    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, text: trimmed, priority, dueDate, updatedAt: Date.now() } : t));
+    setTasks((prev) => prev.map((t) => t.id === id ? { ...t, text: trimmed, priority, dueAt, reminderOffsetMinutes, updatedAt: Date.now() } : t));
 
-    const { error: err } = await supabase.from('tasks').update({ text: trimmed, priority, due_date: dueDate, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error: err } = await supabase.from('tasks').update({
+      text: trimmed, priority, due_at: dueAt,
+      reminder_offset_minutes: reminderOffsetMinutes, updated_at: new Date().toISOString(),
+    }).eq('id', id);
     if (err && original) { setTasks((prev) => prev.map((t) => t.id === id ? original : t)); setError(err.message); }
   };
 
   const clearCompleted = async () => {
-    if (!supabase) return;
+    if (!supabase || !user) return;
     const ids = tasks.filter((t) => t.completed).map((t) => t.id);
     if (!ids.length) return;
 

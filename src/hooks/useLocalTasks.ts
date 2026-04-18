@@ -7,18 +7,19 @@ export function useLocalTasks() {
 
   const tasks: Task[] = rawTasks.map((t) => ({
     priority: 'medium',
-    dueDate: null,
+    dueAt: t.dueAt ?? t.dueDate ?? null,
+    reminderOffsetMinutes: null,
     updatedAt: t.createdAt,
     ...t,
   }));
 
-  const addTask = ({ text, priority, dueDate }: TaskInput) => {
+  const addTask = ({ text, priority, dueAt, reminderOffsetMinutes }: TaskInput) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     const now = Date.now();
     setTasks((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), text: trimmed, completed: false, priority, dueDate, createdAt: now, updatedAt: now },
+      { id: crypto.randomUUID(), text: trimmed, completed: false, priority, dueAt, reminderOffsetMinutes, createdAt: now, updatedAt: now },
     ]);
   };
 
@@ -32,11 +33,11 @@ export function useLocalTasks() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const editTask = (id: string, { text, priority, dueDate }: TaskInput) => {
+  const editTask = (id: string, { text, priority, dueAt, reminderOffsetMinutes }: TaskInput) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, text: trimmed, priority, dueDate, updatedAt: Date.now() } : t))
+      prev.map((t) => (t.id === id ? { ...t, text: trimmed, priority, dueAt, reminderOffsetMinutes, updatedAt: Date.now() } : t))
     );
   };
 
