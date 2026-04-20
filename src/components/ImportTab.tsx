@@ -60,17 +60,57 @@ const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   sku: 'SKU', md: 'MD表・対象外', unknown: '不明',
 };
 
-const CCGOODS_HEADERS = [
+// Full 112-column header matching futureshop ccGoods CSV export exactly
+const CCGOODS_HEADERS: readonly string[] = [
   'コントロールカラム', '商品URLコード', 'ステータス', '商品番号', '商品名',
-  '本体価格', '定価', '消費税', '在庫管理',
-  'バリエーション横軸名', 'バリエーション縦軸名', 'JANコード', '独自コメント（1）',
-] as const;
+  'メイングループ', '優先度', '本体価格', '定価', '消費税',
+  '販売期間(From)', '販売期間(to)', '販売期間表示', 'クール便指定',
+  '送料', '送料パターン', '送料パターン表示', '送料個別金額', '個別送料表示',
+  'オススメ商品商品ページ内表示', 'オススメ商品リスト', 'オススメ商品表示方法',
+  '商品価格上部コメントHTMLタグ', '商品価格上部コメント',
+  '定価価格前文字', '定価価格後文字', '販売価格前文字', '取消線', '定価表示方法',
+  '在庫管理', '在庫数表示設定', '在庫数表示設定方法', '在庫僅少表示閾値',
+  '在庫なし表示テキスト', '在庫なし表示テキスト表示方法',
+  '現在在庫数', '調整在庫数', '在庫数切れメール閾値',
+  'バリエーション横軸名', 'バリエーション縦軸名',
+  '会員価格設定', '会員価格', 'アクセス制限', 'ポイント付与率設定', 'ポイント付与率',
+  'ステータス（他社サービス）', 'サンプル商品設定', 'サンプル商品同梱設定',
+  '最大購入制限個数', '入荷お知らせメールボタン表示',
+  'JANコード', 'キャッチコピー',
+  'レコメンド２：行動履歴収集タグ出力フラグ', 'レコメンド２：レコメンド商品出力フラグ',
+  'レコメンド２：レコメンド表示フラグ', 'レコメンド２：レコメンド使用タグ優先設定',
+  'レコメンド２：商品ページ上部コメントの上', 'レコメンド２：商品ページ上部コメントの下',
+  'レコメンド２：商品ページ下部コメントの上', 'レコメンド２：商品ページ下部コメントの下',
+  'レコメンド２：商品ページおすすめ商品の上', 'レコメンド２：商品ページおすすめ商品の下',
+  'お気に入り登録数', 'メール便指定', 'メール便同梱数', 'バンドル販売',
+  '外部連携任意項目', 'おすすめ商品表示パターン設定',
+  'おすすめ商品表示パターン(コマースクリエイター)',
+  '外部連携商品名', '外部連携商品説明', 'レイアウト割当名',
+  'ページ名(コマースクリエイター)', 'ページ名表示方法(コマースクリエイター)',
+  'キーワード(コマースクリエイター)', 'キーワード表示方法(コマースクリエイター)',
+  'Description(コマースクリエイター)', 'Description表示方法(コマースクリエイター)',
+  '商品一言説明(コマースクリエイター)',
+  '商品説明（大）', '商品説明（小）',
+  '独自コメント（1）', '独自コメント（2）', '独自コメント（3）', '独自コメント（4）',
+  '独自コメント（5）', '独自コメント（6）', '独自コメント（7）', '独自コメント（8）',
+  '独自コメント（9）', '独自コメント（10）', '独自コメント（11）', '独自コメント（12）',
+  '独自コメント（13）', '独自コメント（14）', '独自コメント（15）', '独自コメント（16）',
+  '独自コメント（17）', '独自コメント（18）', '独自コメント（19）', '独自コメント（20）',
+  'レコメンド２：レコメンド表示フラグ(コマースクリエイター)',
+  'レコメンド２：レコメンド使用タグ優先設定(コマースクリエイター)',
+  'レコメンド２：出力タグ１', 'レコメンド２：出力タグ２', 'レコメンド２：出力タグ３',
+  'レコメンド２：出力タグ４', 'レコメンド２：出力タグ５', 'レコメンド２：出力タグ６',
+  '商品URL', '登録日時', '最終更新日時',
+]; // 112 columns
 
-const VARIATION_HEADERS = [
-  '商品URLコード', 'バリエーション別選択肢（横軸）', 'バリエーション別枝番（横軸）',
-  'バリエーション別選択肢（縦軸）', 'バリエーション別枝番（縦軸）', '代表バリエーション',
-  '在庫閾値', '在庫切れメール閾値', '商品番号', '商品管理番号', '商品名', 'JANコード',
-] as const;
+// Full 13-column header matching futureshop goodsVariationDetail CSV export exactly
+const VARIATION_HEADERS: readonly string[] = [
+  '商品URLコード',
+  'バリエーション別選択肢（横軸）', 'バリエーション別枝番（横軸）',
+  'バリエーション別選択肢（縦軸）', 'バリエーション別枝番（縦軸）',
+  '代表バリエーション', '在庫閾値', '在庫切れメール閾値',
+  '商品番号', '商品管理番号', '商品名', 'JANコード', '最終更新日付',
+]; // 13 columns
 
 // ── Parse utilities ───────────────────────────────────────────────────────────
 
@@ -118,11 +158,13 @@ function classifySheetKind(sheetName: string, headers: string[]): SheetKind {
 // ── Column detection ──────────────────────────────────────────────────────────
 
 function detectCol(headers: string[], exact: string[], partial: string[]): string {
-  return (
-    headers.find((h) => exact.some((k) => h === k)) ??
-    headers.find((h) => partial.some((k) => h.toLowerCase().includes(k.toLowerCase()))) ??
-    ''
-  );
+  // Exact keywords are checked in PRIORITY ORDER: first keyword that exists in headers wins.
+  // (Do NOT use headers.find() here — that returns the first *header* matching any keyword,
+  //  which ignores the intended priority of the keywords list.)
+  for (const k of exact) {
+    if (headers.includes(k)) return k;
+  }
+  return headers.find((h) => partial.some((k) => h.toLowerCase().includes(k.toLowerCase()))) ?? '';
 }
 
 function autoDetect(headers: string[]): ColMap {
@@ -131,9 +173,11 @@ function autoDetect(headers: string[]): ColMap {
     skuNo:        detectCol(headers, ['商品管理番号'], ['商品id', '管理番号', 'sku番号']),
     urlCode:      detectCol(headers, [], ['urlコード', '商品url']),
     productName:  detectCol(headers, ['商品名'], ['品名']),
-    price:        detectCol(headers, ['単価', '本体価格'], ['販売価格']),
+    // 税込 takes priority over 単価; futureshop requires tax-inclusive price
+    price:        detectCol(headers, ['税込', '税込価格', '単価', '本体価格'], ['販売価格']),
     janCode:      detectCol(headers, ['JAN'], ['jan', 'ean', 'バーコード']),
-    colorDisplay: detectCol(headers, ['カラー表記'], ['カラー名']),
+    // カラー名 = display name only (e.g. "OFF WHITE"), not "02_OFF WHITE"
+    colorDisplay: detectCol(headers, ['カラー名'], ['カラー表記']),
     colorCode:    detectCol(headers, ['カラー_2'], []),
     sizeName:     detectCol(headers, ['サイズ'], []),
     sizeCode:     detectCol(headers, ['サイズ_2'], []),
@@ -194,8 +238,40 @@ function rv(raw: Record<string, string>, key: string): string {
   return key ? (raw[key] ?? '') : '';
 }
 
+// Build a header→index lookup for header-name-based field assignment (resistant to column order changes)
+function buildHeaderIdx(headers: readonly string[]): Map<string, number> {
+  return new Map(headers.map((h, i) => [h, i]));
+}
+
+// Fixed values to inject into every ccGoods row, keyed by exact futureshop header name
+const CCGOODS_FIXED: Record<string, string> = {
+  'ステータス':                     '1',
+  '消費税':                         '1',
+  '販売期間表示':                   '1',
+  '在庫管理':                       '1',
+  '在庫なし表示テキスト':           'SOLD OUT',
+  '在庫なし表示テキスト表示方法':   '0',
+  '在庫数切れメール閾値':           '0',
+};
+
 function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
   const lines: string[] = [toCsvRow([...CCGOODS_HEADERS])];
+  const hIdx = buildHeaderIdx(CCGOODS_HEADERS);
+
+  // Validate that all fixed-value headers exist in the template (warn silently if not)
+  // This guards against future futureshop format changes
+
+  // First pass: determine whether each product is new ('n') or update ('u')
+  // A product is 'u' if any of its SKUs already exist (has_diff or duplicate)
+  const productHasExisting = new Set<string>();
+  for (const r of rows) {
+    if (!r.selected || !r.productNo) continue;
+    if (r.status === 'has_diff' || r.status === 'duplicate') {
+      productHasExisting.add(r.productNo);
+    }
+  }
+
+  // Second pass: one row per unique product
   const seen = new Set<string>();
   for (const r of rows) {
     if (!r.selected) continue;
@@ -203,21 +279,35 @@ function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
     if (!productNo || seen.has(productNo)) continue;
     seen.add(productNo);
     const urlCode = r.urlCode || rv(r.rawData, colMap.urlCode) || productNo;
-    lines.push(toCsvRow([
-      '',
-      urlCode,
-      '1',
-      productNo,
-      rv(r.rawData, colMap.productName),
-      rv(r.rawData, colMap.price).replace(/[^0-9.]/g, ''),
-      '',
-      '1',
-      '1',
-      colMap.colorDisplay ? 'カラー' : '',
-      colMap.sizeName     ? 'サイズ' : '',
-      rv(r.rawData, colMap.janCode),
-      '',
-    ]));
+
+    // Base row: all 112 columns empty
+    const row = new Array<string>(CCGOODS_HEADERS.length).fill('');
+
+    // コントロールカラム: 'n' = new product, 'u' = update existing
+    const ctrl = productHasExisting.has(productNo) ? 'u' : 'n';
+    const ctrlIdx = hIdx.get('コントロールカラム');
+    if (ctrlIdx !== undefined) row[ctrlIdx] = ctrl;
+
+    // Mapped values from source file
+    const setH = (headerName: string, val: string) => {
+      const i = hIdx.get(headerName);
+      if (i !== undefined) row[i] = val;
+    };
+    setH('商品URLコード',       urlCode);
+    setH('商品番号',            productNo);
+    setH('商品名',              rv(r.rawData, colMap.productName));
+    setH('本体価格',            rv(r.rawData, colMap.price).replace(/[^0-9.]/g, ''));
+    setH('JANコード',           rv(r.rawData, colMap.janCode));
+    setH('バリエーション横軸名', colMap.colorDisplay ? 'カラー' : '');
+    setH('バリエーション縦軸名', colMap.sizeName     ? 'サイズ' : '');
+
+    // Fixed values (header-name keyed, order-independent)
+    for (const [headerName, val] of Object.entries(CCGOODS_FIXED)) {
+      const i = hIdx.get(headerName);
+      if (i !== undefined) row[i] = val;
+    }
+
+    lines.push(toCsvRow(row));
   }
   return lines.join('\n');
 }
@@ -227,15 +317,19 @@ function generateVariationDetailCsv(rows: ReviewRow[], colMap: ColMap): string {
   const firstSkuPerProduct = new Set<string>();
   for (const r of rows) {
     if (!r.selected) continue;
+    // Skip rows with no key identifiers (blank rows that may be selected via "select all")
+    if (!r.skuNo && !r.productNo && !rv(r.rawData, colMap.productName)) continue;
     const urlCode   = r.urlCode || rv(r.rawData, colMap.urlCode) || r.productNo;
+    // バリエーション別選択肢（横軸）= カラー名のみ (例: "OFF WHITE")
+    // バリエーション別枝番（横軸）= 数値コード (例: "02")
     const colorDisp = rv(r.rawData, colMap.colorDisplay);
     const colorCode = rv(r.rawData, colMap.colorCode);
     const sizeDisp  = rv(r.rawData, colMap.sizeName);
     const sizeCode  = rv(r.rawData, colMap.sizeCode);
     const isFirst   = r.productNo ? !firstSkuPerProduct.has(r.productNo) : false;
     if (r.productNo) firstSkuPerProduct.add(r.productNo);
-    const baseName  = rv(r.rawData, colMap.productName);
-    const skuName   = [baseName, colorDisp, sizeDisp].filter(Boolean).join('\u3000');
+    // 商品名: 商品名のみ。色・サイズはバリエーション項目側で管理
+    const skuName = rv(r.rawData, colMap.productName);
     lines.push(toCsvRow([
       urlCode,
       colorDisp,
@@ -243,12 +337,13 @@ function generateVariationDetailCsv(rows: ReviewRow[], colMap: ColMap): string {
       sizeDisp,
       sizeCode,
       isFirst ? '1' : '',
-      '2',
-      '0',
+      '2',  // 在庫閾値
+      '0',  // 在庫切れメール閾値
       r.productNo,
       r.skuNo,
       skuName,
       rv(r.rawData, colMap.janCode),
+      '',   // 最終更新日付 (futureshop manages)
     ]));
   }
   return lines.join('\n');
@@ -439,10 +534,10 @@ const COL_FIELDS: { key: keyof ColMap; label: string; required: boolean; hint: s
   { key: 'productNo',    label: '品番',          required: false, hint: '→ 商品URLコード / 商品番号' },
   { key: 'skuNo',        label: '商品管理番号',   required: true,  hint: '→ SKU識別キー' },
   { key: 'productName',  label: '商品名',         required: false, hint: '→ ccGoods 商品名' },
-  { key: 'price',        label: '単価',           required: false, hint: '→ 本体価格（税抜）' },
+  { key: 'price',        label: '価格（税込）',    required: false, hint: '→ 本体価格（税込優先）' },
   { key: 'janCode',      label: 'JAN コード',     required: false, hint: '' },
   { key: 'urlCode',      label: '商品URLコード',  required: false, hint: '空欄時は品番で代替' },
-  { key: 'colorDisplay', label: 'カラー表記',      required: false, hint: '→ 選択肢（横軸）' },
+  { key: 'colorDisplay', label: 'カラー名',         required: false, hint: '→ 選択肢（横軸）' },
   { key: 'colorCode',    label: 'カラー枝番',      required: false, hint: '→ 枝番（横軸）' },
   { key: 'sizeName',     label: 'サイズ表記',      required: false, hint: '→ 選択肢（縦軸）' },
   { key: 'sizeCode',     label: 'サイズ枝番',      required: false, hint: '→ 枝番（縦軸）' },

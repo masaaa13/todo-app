@@ -148,6 +148,22 @@
 
 .sheetName { font-size: 0.88rem; font-weight: 600; color: var(--color-text); }
 
+.sheetCard[data-blocked] { opacity: 0.6; cursor: default; }
+.sheetCard[data-blocked]:hover { border-color: var(--color-border); background: #fff; }
+
+.sheetMeta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+.kindBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.kindBadge[data-kind='sku']     { background: #dcfce7; color: #16a34a; }
+.kindBadge[data-kind='md']      { background: #fee2e2; color: #dc2626; }
+.kindBadge[data-kind='unknown'] { background: #f3f4f6; color: #6b7280; }
+
 .sheetRowCount {
   font-size: 0.76rem;
   font-weight: 600;
@@ -156,6 +172,16 @@
   padding: 2px 8px;
   border-radius: 99px;
   flex-shrink: 0;
+}
+
+.mdBlockMsg {
+  padding: 12px 16px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  color: #b91c1c;
+  margin-bottom: 16px;
 }
 
 /* ── Preview table ── */
@@ -217,7 +243,7 @@
 /* ── Column mapping ── */
 .colMapGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px 14px;
   margin-bottom: 16px;
 }
@@ -245,6 +271,12 @@
 }
 
 .colSelect:focus { border-color: var(--color-accent); }
+
+.colHint {
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+  margin-top: 1px;
+}
 
 .inlineWarn {
   font-size: 0.8rem;
@@ -441,6 +473,24 @@
 
 .saveBtn:hover:not(:disabled) { background: #15803d; }
 .saveBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.csvBtnGroup { display: flex; gap: 6px; }
+
+.csvBtn {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1.5px solid #fde68a;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.csvBtn:hover:not(:disabled) { background: #fde68a; }
+.csvBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Done step ── */
 .doneStep {
