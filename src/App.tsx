@@ -15,6 +15,7 @@ import { NotificationSettings } from './components/NotificationSettings';
 import { ProductsTab } from './components/ProductsTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
+import { ImportTab } from './components/ImportTab';
 import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
@@ -130,6 +131,7 @@ function App() {
         {activeTab === 'products'  && <ProductsTab user={user} />}
         {activeTab === 'schedules' && <ScheduleTab user={user} />}
         {activeTab === 'inventory' && <InventoryTab user={user} />}
+        {activeTab === 'import'    && <ImportTab user={user} />}
       </main>
     </div>
   );

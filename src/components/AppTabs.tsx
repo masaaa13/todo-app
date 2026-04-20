@@ -1,15 +1,16 @@
 import styles from './AppTabs.module.css';
 
-export type AppTab = 'tasks' | 'products' | 'inventory' | 'schedules';
+export type AppTab = 'tasks' | 'products' | 'inventory' | 'schedules' | 'import';
 
 const TAB_LABELS: Record<AppTab, string> = {
   tasks:     'タスク',
   products:  '商品管理',
   inventory: '在庫候補',
   schedules: 'スケジュール',
+  import:    'データ取込',
 };
 
-const TABS: AppTab[] = ['tasks', 'products', 'inventory', 'schedules'];
+const TABS: AppTab[] = ['tasks', 'products', 'inventory', 'schedules', 'import'];
 
 type Props = {
   current: AppTab;
