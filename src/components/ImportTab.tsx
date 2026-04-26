@@ -374,8 +374,8 @@ type GroupRule = { keywords: string[]; group: string };
 
 // メイングループ判定ルール（先勝ち）
 const MAIN_GROUP_RULES: GroupRule[] = [
-  { keywords: ['JUMPER SKIRT', 'ONE PIECE', 'DRESS'], group: 'ONE PIECE' },
-  { keywords: ['L/S TEE', 'S/S TEE', 'LONG SLEEVE TEE', 'SHORT SLEEVE TEE', 'T-SHIRT', 'TEE', 'CUTSEW', 'KNIT', 'CARDIGAN', 'SWEAT', 'HOODIE', 'BOLERO'], group: 'TOPS' },
+  { keywords: ['JUMPER SKIRT', 'ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL'], group: 'ONE PIECE' },
+  { keywords: ['TOPS', 'L/S TEE', 'S/S TEE', 'LONG SLEEVE TEE', 'SHORT SLEEVE TEE', 'T-SHIRT', 'TEE', 'CUTSEW', 'KNIT', 'CARDIGAN', 'SWEAT', 'HOODIE', 'BOLERO', 'BUSTIER'], group: 'TOPS' },
   { keywords: ['BLOUSE', 'BLOUSES', 'SHIRT'], group: 'SHIRTS-BLOUSE' },
   { keywords: ['SKIRT'], group: 'SKIRT' },
   { keywords: ['SHORT PANTS', 'SALOPETTE', 'DENIM', 'PANTS'], group: 'PANTS' },
@@ -383,7 +383,7 @@ const MAIN_GROUP_RULES: GroupRule[] = [
   { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
   { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
   { keywords: ['SOCKS'], group: 'SOCKS' },
-  { keywords: ['POUCH', 'BAG', 'ACCESSORIES', 'CHARM', 'KEY RING', 'UMBRELLA', 'NECK WARMER', 'SWIM WEAR', 'SWIMSUIT', 'RASH GUARD'], group: 'GOODS' },
+  { keywords: ['POUCH', 'BAG', 'ACCESSORIES', 'CHARM', 'KEY RING', 'UMBRELLA', 'NECK WARMER', 'SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD', 'HARNESS'], group: 'GOODS' },
 ];
 
 // category.csv サブグループ判定ルール（先勝ち）
@@ -396,10 +396,12 @@ const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['CARDIGAN'], group: 'TOPS/CARDIGAN' },
   { keywords: ['SWEAT', 'HOODIE'], group: 'TOPS/SWEAT' },
   { keywords: ['BOLERO'], group: 'TOPS/BOLERO' },
+  { keywords: ['BUSTIER'], group: 'TOPS/OTHER' },
+  { keywords: ['TOPS'], group: 'TOPS' },
   { keywords: ['BLOUSE', 'BLOUSES'], group: 'SHIRTS-BLOUSE/BLOUSES' },
   { keywords: ['SHIRT'], group: 'SHIRTS-BLOUSE/SHIRT' },
   { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JUMPER SKIRT' },
-  { keywords: ['ONE PIECE', 'DRESS'], group: 'ONE PIECE/ONE PIECE' },
+  { keywords: ['ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL'], group: 'ONE PIECE/ONE PIECE' },
   { keywords: ['SKIRT'], group: 'SKIRT' },
   { keywords: ['DENIM'], group: 'PANTS/DENIM' },
   { keywords: ['SHORT PANTS'], group: 'PANTS/SHORT PANTS' },
@@ -408,13 +410,13 @@ const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['OUTER', 'COAT', 'BLOUSON'], group: 'JACKET-OUTER/OUTER' },
   { keywords: ['JACKET'], group: 'JACKET-OUTER/JACKET' },
   { keywords: ['POUCH', 'BAG'], group: 'BAG' },
-  { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING'], group: 'GOODS/ACCESSORIES' },
+  { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING', 'HARNESS'], group: 'GOODS/ACCESSORIES' },
   { keywords: ['UMBRELLA'], group: 'GOODS/UMBRELLA' },
   { keywords: ['NECK WARMER'], group: 'GOODS/NECK WARMER' },
   { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
   { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
   { keywords: ['SOCKS'], group: 'SOCKS' },
-  { keywords: ['SWIM WEAR', 'SWIMSUIT', 'RASH GUARD'], group: 'GOODS/SWIM WEAR' },
+  { keywords: ['SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD'], group: 'GOODS/SWIM WEAR' },
 ];
 
 function matchFirstRule(name: string, rules: GroupRule[]): string {
@@ -430,8 +432,14 @@ function inferMainGroup(productName: string): string {
   return matchFirstRule(productName, MAIN_GROUP_RULES);
 }
 
+// コラボ英字名 → category.csv 表示用日本語名のマッピング
+const COLLAB_GROUP_NAME_MAP: Record<string, string> = {
+  'CHARMMYKITTY': 'チャーミーキティ',
+  'KEROKEROKEROPPI': 'はぴだんぶい',
+};
+
 // category.csv の表示先グループ（サブカテゴリ）一覧を返す。
-// コラボ商品は COLLABORATION/〇〇 ＋ 通常サブカテゴリの複数行になる。
+// コラボ商品は COLLABORATION/日本語名 ＋ 通常サブカテゴリの複数行になる。
 function inferSubGroups(productName: string): string[] {
   const collabName = extractCollabName(productName);
   const nameForMatching = collabName
@@ -439,7 +447,10 @@ function inferSubGroups(productName: string): string[] {
     : productName;
 
   const result: string[] = [];
-  if (collabName) result.push(`COLLABORATION/${collabName}`);
+  if (collabName) {
+    const displayName = COLLAB_GROUP_NAME_MAP[collabName] ?? collabName;
+    result.push(`COLLABORATION/${displayName}`);
+  }
 
   const sub = matchFirstRule(nameForMatching, SUB_GROUP_RULES);
   if (sub) result.push(sub);
