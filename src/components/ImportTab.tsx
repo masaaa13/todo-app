@@ -1167,11 +1167,16 @@ type SupplementPanelProps = {
   onMdFile: (file: File) => Promise<void>;
 };
 
+function shortenMdFilename(filename: string): string {
+  return /^\d+MD\.xlsx$/i.test(filename) ? 'MD.xlsx' : filename;
+}
+
 function SupplementPanel({
   captionFilename, specFilename, materialFilename, mdFilename,
   captionLoading, specLoading, materialLoading, mdLoading,
   onCaptionFile, onSpecFile, onMaterialFile, onMdFile,
 }: SupplementPanelProps) {
+  const mdDisplayName = mdFilename ? shortenMdFilename(mdFilename) : '';
   return (
     <div className={styles.supplementPanel}>
       <div className={styles.supplementTitle}>補完ファイル（任意）</div>
@@ -1201,7 +1206,7 @@ function SupplementPanel({
         <SupplementSlot
           label="販売期間（From）発売日"
           hint="1251MD.xlsx をドロップ"
-          filename={mdFilename}
+          filename={mdDisplayName}
           loading={mdLoading}
           onFile={onMdFile}
         />
