@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import type { User } from '@supabase/supabase-js';
+import Encoding from 'encoding-japanese';
 import { supabase } from '../lib/supabase';
 import { useFsProducts } from '../hooks/useFsProducts';
 import type { ImportRowStatus } from '../types/importJob';
@@ -247,6 +248,20 @@ function downloadCsv(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
+// futureshop の category.csv は Shift_JIS 指定のため専用関数で出力
+function downloadShiftJisCsv(filename: string, content: string): void {
+  const sjisArray = Encoding.convert(Encoding.stringToCode(content), {
+    to: 'SJIS', from: 'UNICODE',
+  });
+  const blob = new Blob([new Uint8Array(sjisArray)], { type: 'text/csv;charset=shift_jis' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function rv(raw: Record<string, string>, key: string): string {
   return key ? (raw[key] ?? '') : '';
 }
@@ -339,6 +354,97 @@ const EXCLUDED_PRODUCT_NOS = new Set([
 
 function isExcludedProductNo(productNo: string): boolean {
   return EXCLUDED_PRODUCT_NOS.has(productNo);
+}
+
+// ── Group inference ───────────────────────────────────────────────────────────
+
+// キーワードを「単語境界」で照合する（例: CAP が CAPSULE にマッチしない）
+function nameIncludes(productName: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(productName);
+}
+
+// 【〇〇】形式のコラボ名を抽出（先頭のみ）
+function extractCollabName(productName: string): string | null {
+  const m = productName.match(/^【(.+?)】/);
+  return m ? m[1] : null;
+}
+
+type GroupRule = { keywords: string[]; group: string };
+
+// メイングループ判定ルール（先勝ち）
+const MAIN_GROUP_RULES: GroupRule[] = [
+  { keywords: ['JUMPER SKIRT', 'ONE PIECE', 'DRESS'], group: 'ONE PIECE' },
+  { keywords: ['L/S TEE', 'S/S TEE', 'LONG SLEEVE TEE', 'SHORT SLEEVE TEE', 'T-SHIRT', 'TEE', 'CUTSEW', 'KNIT', 'CARDIGAN', 'SWEAT', 'HOODIE', 'BOLERO'], group: 'TOPS' },
+  { keywords: ['BLOUSE', 'BLOUSES', 'SHIRT'], group: 'SHIRTS-BLOUSE' },
+  { keywords: ['SKIRT'], group: 'SKIRT' },
+  { keywords: ['SHORT PANTS', 'SALOPETTE', 'DENIM', 'PANTS'], group: 'PANTS' },
+  { keywords: ['OUTER', 'BLOUSON', 'COAT', 'JACKET'], group: 'JACKET-OUTER' },
+  { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
+  { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
+  { keywords: ['SOCKS'], group: 'SOCKS' },
+  { keywords: ['POUCH', 'BAG', 'ACCESSORIES', 'CHARM', 'KEY RING', 'UMBRELLA', 'NECK WARMER', 'SWIM WEAR', 'SWIMSUIT', 'RASH GUARD'], group: 'GOODS' },
+];
+
+// category.csv サブグループ判定ルール（先勝ち）
+const SUB_GROUP_RULES: GroupRule[] = [
+  { keywords: ['L/S TEE', 'LONG SLEEVE TEE', 'LONG SLEEVE'], group: 'TOPS/T-SHIRT/LONG SLEEVE' },
+  { keywords: ['S/S TEE', 'SHORT SLEEVE TEE', 'TEE'], group: 'TOPS/T-SHIRT/SHORT SLEEVE' },
+  { keywords: ['T-SHIRT'], group: 'TOPS/T-SHIRT' },
+  { keywords: ['CUTSEW'], group: 'TOPS/CUTSEW' },
+  { keywords: ['KNIT'], group: 'TOPS/KNIT' },
+  { keywords: ['CARDIGAN'], group: 'TOPS/CARDIGAN' },
+  { keywords: ['SWEAT', 'HOODIE'], group: 'TOPS/SWEAT' },
+  { keywords: ['BOLERO'], group: 'TOPS/BOLERO' },
+  { keywords: ['BLOUSE', 'BLOUSES'], group: 'SHIRTS-BLOUSE/BLOUSES' },
+  { keywords: ['SHIRT'], group: 'SHIRTS-BLOUSE/SHIRT' },
+  { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JUMPER SKIRT' },
+  { keywords: ['ONE PIECE', 'DRESS'], group: 'ONE PIECE/ONE PIECE' },
+  { keywords: ['SKIRT'], group: 'SKIRT' },
+  { keywords: ['DENIM'], group: 'PANTS/DENIM' },
+  { keywords: ['SHORT PANTS'], group: 'PANTS/SHORT PANTS' },
+  { keywords: ['SALOPETTE'], group: 'PANTS/SALOPETTE' },
+  { keywords: ['PANTS'], group: 'PANTS/PANTS' },
+  { keywords: ['OUTER', 'COAT', 'BLOUSON'], group: 'JACKET-OUTER/OUTER' },
+  { keywords: ['JACKET'], group: 'JACKET-OUTER/JACKET' },
+  { keywords: ['POUCH', 'BAG'], group: 'BAG' },
+  { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING'], group: 'GOODS/ACCESSORIES' },
+  { keywords: ['UMBRELLA'], group: 'GOODS/UMBRELLA' },
+  { keywords: ['NECK WARMER'], group: 'GOODS/NECK WARMER' },
+  { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
+  { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
+  { keywords: ['SOCKS'], group: 'SOCKS' },
+  { keywords: ['SWIM WEAR', 'SWIMSUIT', 'RASH GUARD'], group: 'GOODS/SWIM WEAR' },
+];
+
+function matchFirstRule(name: string, rules: GroupRule[]): string {
+  for (const { keywords, group } of rules) {
+    if (keywords.some((kw) => nameIncludes(name, kw))) return group;
+  }
+  return '';
+}
+
+// ccGoods F列「メイングループ」を推定する。コラボ商品は COLLABORATION を返す。
+function inferMainGroup(productName: string): string {
+  if (extractCollabName(productName)) return 'COLLABORATION';
+  return matchFirstRule(productName, MAIN_GROUP_RULES);
+}
+
+// category.csv の表示先グループ（サブカテゴリ）一覧を返す。
+// コラボ商品は COLLABORATION/〇〇 ＋ 通常サブカテゴリの複数行になる。
+function inferSubGroups(productName: string): string[] {
+  const collabName = extractCollabName(productName);
+  const nameForMatching = collabName
+    ? productName.replace(/^【.+?】\s*/, '')
+    : productName;
+
+  const result: string[] = [];
+  if (collabName) result.push(`COLLABORATION/${collabName}`);
+
+  const sub = matchFirstRule(nameForMatching, SUB_GROUP_RULES);
+  if (sub) result.push(sub);
+
+  return result;
 }
 
 // Fixed values to inject into every ccGoods row, keyed by exact futureshop header name
@@ -621,6 +727,7 @@ function generateCcGoodsCsv(
   // Second pass: one row per unique product
   const seen = new Set<string>();
   const missingMaterialNos: string[] = [];
+  const missingMainGroupNos: string[] = [];
   for (const r of rows) {
     if (!r.selected) continue;
     const productNo = r.productNo || rv(r.rawData, colMap.productNo);
@@ -642,9 +749,13 @@ function generateCcGoodsCsv(
       const i = hIdx.get(headerName);
       if (i !== undefined) row[i] = val;
     };
+    const productName = rv(r.rawData, colMap.productName);
+    const mainGroup = inferMainGroup(productName);
+    if (!mainGroup) missingMainGroupNos.push(productNo);
     setH('商品URLコード',       urlCode);
     setH('商品番号',            productNo);
-    setH('商品名',              rv(r.rawData, colMap.productName));
+    setH('商品名',              productName);
+    setH('メイングループ',       mainGroup);
     setH('本体価格',            rv(r.rawData, colMap.price).replace(/[^0-9.]/g, ''));
     setH('JANコード',           rv(r.rawData, colMap.janCode));
     setH('バリエーション横軸名', colMap.colorDisplay ? 'カラー' : '');
@@ -667,6 +778,12 @@ function generateCcGoodsCsv(
     console.warn(
       `[素材未取得] 企画寸はあるが素材が未登録の品番 ${missingMaterialNos.length}件:`,
       missingMaterialNos.join(', '),
+    );
+  }
+  if (missingMainGroupNos.length > 0) {
+    console.warn(
+      `[メイングループ未判定] ${missingMainGroupNos.length}件:`,
+      missingMainGroupNos.join(', '),
     );
   }
   return lines.join('\n');
@@ -708,6 +825,53 @@ function generateVariationDetailCsv(rows: ReviewRow[], colMap: ColMap): string {
     ]));
   }
   return lines.join('\n');
+}
+
+// ── Category CSV ─────────────────────────────────────────────────────────────
+
+const CATEGORY_HEADERS = [
+  'コントロールカラム', '商品URLコード', '商品名', '表示先グループ', '登録日時', '最終更新日時',
+] as const;
+
+function generateCategoryCsv(rows: ReviewRow[], colMap: ColMap): string {
+  const lines: string[] = [toCsvRow([...CATEGORY_HEADERS])];
+  const seenProducts = new Set<string>();
+  const seenRows = new Set<string>(); // urlCode + subGroup の重複排除
+  const missingSubGroupNos: string[] = [];
+
+  for (const r of rows) {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    if (!productNo || isExcludedProductNo(productNo)) continue;
+    if (seenProducts.has(productNo)) continue;
+    seenProducts.add(productNo);
+
+    const productName = rv(r.rawData, colMap.productName);
+    if (!productName) continue;
+    const urlCode = r.urlCode || rv(r.rawData, colMap.urlCode) || productNo;
+
+    const subGroups = inferSubGroups(productName);
+    if (subGroups.length === 0) {
+      missingSubGroupNos.push(productNo);
+      continue;
+    }
+
+    for (const sg of subGroups) {
+      const key = `${urlCode}\x00${sg}`;
+      if (seenRows.has(key)) continue;
+      seenRows.add(key);
+      lines.push(toCsvRow(['n', urlCode, productName, sg, '', '']));
+    }
+  }
+
+  if (missingSubGroupNos.length > 0) {
+    console.warn(
+      `[表示先グループ未判定] ${missingSubGroupNos.length}件:`,
+      missingSubGroupNos.join(', '),
+    );
+  }
+
+  // futureshop は CRLF 推奨
+  return lines.join('\r\n');
 }
 
 // ── SupplementCheck ───────────────────────────────────────────────────────────
@@ -1156,12 +1320,13 @@ type ReviewStepProps = {
   onSave: () => void;
   onDownloadCcGoods: () => void;
   onDownloadVariation: () => void;
+  onDownloadCategory: () => void;
 };
 
 function ReviewStep({
   rows, colMap, saving, error,
   onToggle, onToggleAll, onBack, onSave,
-  onDownloadCcGoods, onDownloadVariation,
+  onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
 }: ReviewStepProps) {
   const [filter, setFilter] = useState<ImportRowStatus | 'all'>('all');
 
@@ -1282,6 +1447,14 @@ function ReviewStep({
           >
             ⬇ variationDetail.csv
           </button>
+          <button
+            className={styles.csvBtn}
+            onClick={onDownloadCategory}
+            disabled={!hasValidRows}
+            title="サブカテゴリひもづけ用（Shift_JIS）"
+          >
+            ⬇ category.csv
+          </button>
         </div>
         <button
           className={styles.saveBtn}
@@ -1298,12 +1471,13 @@ function ReviewStep({
 
 // ── DoneStep ──────────────────────────────────────────────────────────────────
 
-function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadVariation }: {
+function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadVariation, onDownloadCategory }: {
   newCount: number;
   diffCount: number;
   onReset: () => void;
   onDownloadCcGoods: () => void;
   onDownloadVariation: () => void;
+  onDownloadCategory: () => void;
 }) {
   return (
     <div className={styles.doneStep}>
@@ -1316,6 +1490,7 @@ function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadV
       <div className={styles.csvBtnGroup}>
         <button className={styles.csvBtn} onClick={onDownloadCcGoods}>⬇ ccGoods.csv</button>
         <button className={styles.csvBtn} onClick={onDownloadVariation}>⬇ variationDetail.csv</button>
+        <button className={styles.csvBtn} onClick={onDownloadCategory}>⬇ category.csv</button>
       </div>
       <button className={styles.resetBtn} onClick={onReset}>別のファイルを取込む</button>
     </div>
@@ -1468,6 +1643,9 @@ export function ImportTab({ user }: ImportTabProps) {
 
   const handleDownloadVariation = () =>
     downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(reviewRows, colMap));
+
+  const handleDownloadCategory = () =>
+    downloadShiftJisCsv('category.csv', generateCategoryCsv(reviewRows, colMap));
 
   const handleSave = async () => {
     if (!supabase || !user) return;
@@ -1645,6 +1823,7 @@ export function ImportTab({ user }: ImportTabProps) {
             onSave={handleSave}
             onDownloadCcGoods={handleDownloadCcGoods}
             onDownloadVariation={handleDownloadVariation}
+            onDownloadCategory={handleDownloadCategory}
           />
         </>
       )}
@@ -1656,6 +1835,7 @@ export function ImportTab({ user }: ImportTabProps) {
           onReset={handleReset}
           onDownloadCcGoods={handleDownloadCcGoods}
           onDownloadVariation={handleDownloadVariation}
+          onDownloadCategory={handleDownloadCategory}
         />
       )}
     </div>
