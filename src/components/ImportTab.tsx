@@ -1173,6 +1173,14 @@ function ReviewStep({
     selected:  rows.filter((r) => r.selected).length,
   };
 
+  // CSV出力は「有効SKU行が1件以上あるか」で制御する。
+  // 重複のみ・選択済み0件でもCSV出力できるよう、選択状態と切り離す。
+  // EXCLUDED_PRODUCT_NOS（ノベルティ等）は除外対象のため有効行に含めない。
+  const hasValidRows = rows.some((r) => {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    return (productNo && !isExcludedProductNo(productNo)) || Boolean(r.skuNo);
+  });
+
   const visible = filter === 'all' ? rows : rows.filter((r) => r.status === filter);
   const visibleSelected = visible.filter((r) => r.selected).length;
   const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
@@ -1258,10 +1266,20 @@ function ReviewStep({
       <div className={styles.stepActions}>
         <button className={styles.backBtn} onClick={onBack} disabled={saving}>← 戻る</button>
         <div className={styles.csvBtnGroup}>
-          <button className={styles.csvBtn} onClick={onDownloadCcGoods} disabled={counts.selected === 0}>
+          <button
+            className={styles.csvBtn}
+            onClick={onDownloadCcGoods}
+            disabled={!hasValidRows}
+            title="読込データ全体から出力（選択状態に関わらず）"
+          >
             ⬇ ccGoods.csv
           </button>
-          <button className={styles.csvBtn} onClick={onDownloadVariation} disabled={counts.selected === 0}>
+          <button
+            className={styles.csvBtn}
+            onClick={onDownloadVariation}
+            disabled={!hasValidRows}
+            title="読込データ全体から出力（選択状態に関わらず）"
+          >
             ⬇ variationDetail.csv
           </button>
         </div>
@@ -1269,8 +1287,9 @@ function ReviewStep({
           className={styles.saveBtn}
           onClick={onSave}
           disabled={saving || counts.selected === 0}
+          title="選択した新規・差分行のみDBに取込む"
         >
-          {saving ? '保存中...' : `${counts.selected} 件を取込む`}
+          {saving ? '保存中...' : `選択 ${counts.selected} 件を取込む`}
         </button>
       </div>
     </div>
