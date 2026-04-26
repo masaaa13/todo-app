@@ -398,7 +398,7 @@ const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['CARDIGAN'], group: 'TOPS/CARDIGAN' },
   { keywords: ['SWEAT', 'HOODIE'], group: 'TOPS/SWEAT' },
   { keywords: ['BOLERO', 'BUSTIER'], group: 'TOPS/OTHER' },
-  { keywords: ['TOPS'], group: 'TOPS' },
+  { keywords: ['TOPS'], group: 'TOPS/CUTSEW' },
   { keywords: ['BLOUSE', 'BLOUSES'], group: 'SHIRTS-BLOUSE/BLOUSES' },
   { keywords: ['SHIRT'], group: 'SHIRTS-BLOUSE/SHIRT' },
   { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JAMPER SKIRT' },
@@ -422,21 +422,39 @@ function matchFirstRule(name: string, rules: GroupRule[]): string {
   return '';
 }
 
-// ccGoods F列「メイングループ」を推定する。コラボ商品は COLLABORATION を返す。
-function inferMainGroup(productName: string): string {
-  if (extractCollabName(productName)) return 'COLLABORATION';
-  return matchFirstRule(productName, MAIN_GROUP_RULES);
-}
-
 // コラボ英字名 → category.csv 表示用日本語名のマッピング
 const COLLAB_GROUP_NAME_MAP: Record<string, string> = {
   'CHARMMYKITTY': 'チャーミーキティ',
   'KEROKEROKEROPPI': 'はぴだんぶい',
 };
 
+// 品番別カテゴリー上書きマップ（商品名推定より最優先）
+const PRODUCT_CATEGORY_OVERRIDES: Record<string, {
+  mainGroup: string;
+  subGroups: string[];
+}> = {
+  '1263704': { mainGroup: 'PANTS',     subGroups: ['PANTS/PANTS'] },
+  '1263931': { mainGroup: 'HAT',       subGroups: [] },
+  '1263941': { mainGroup: 'TOPS',      subGroups: ['TOPS/OTHER'] },
+  '1263503': { mainGroup: 'ONE PIECE', subGroups: ['ONE PIECE/JAMPER SKIRT'] },
+};
+
+// ccGoods F列「メイングループ」を推定する。品番上書き → コラボ → 商品名推定の順。
+function inferMainGroup(productName: string, productNo?: string): string {
+  if (productNo && PRODUCT_CATEGORY_OVERRIDES[productNo]) {
+    return PRODUCT_CATEGORY_OVERRIDES[productNo].mainGroup;
+  }
+  if (extractCollabName(productName)) return 'COLLABORATION';
+  return matchFirstRule(productName, MAIN_GROUP_RULES);
+}
+
 // category.csv の表示先グループ（サブカテゴリ）一覧を返す。
-// コラボ商品は COLLABORATION/日本語名 ＋ 通常サブカテゴリの複数行になる。
-function inferSubGroups(productName: string): string[] {
+// 品番上書き → コラボ COLLABORATION/日本語名 ＋ 通常サブカテゴリの順。
+function inferSubGroups(productName: string, productNo?: string): string[] {
+  if (productNo && PRODUCT_CATEGORY_OVERRIDES[productNo]) {
+    return [...PRODUCT_CATEGORY_OVERRIDES[productNo].subGroups];
+  }
+
   const collabName = extractCollabName(productName);
   const nameForMatching = collabName
     ? productName.replace(/^【.+?】\s*/, '')
@@ -757,7 +775,7 @@ function generateCcGoodsCsv(
       if (i !== undefined) row[i] = val;
     };
     const productName = rv(r.rawData, colMap.productName);
-    const mainGroup = inferMainGroup(productName);
+    const mainGroup = inferMainGroup(productName, productNo);
     if (!mainGroup) missingMainGroupNos.push(productNo);
     setH('商品URLコード',       urlCode);
     setH('商品番号',            productNo);
@@ -856,9 +874,9 @@ function generateCategoryCsv(rows: ReviewRow[], colMap: ColMap): string {
     if (!productName) continue;
     const urlCode = r.urlCode || rv(r.rawData, colMap.urlCode) || productNo;
 
-    const mainGroup = inferMainGroup(productName);
+    const mainGroup = inferMainGroup(productName, productNo);
     // futureshop仕様: メイングループと同一の表示先グループは登録不可
-    const subGroups = inferSubGroups(productName).filter((sg) => sg !== mainGroup);
+    const subGroups = inferSubGroups(productName, productNo).filter((sg) => sg !== mainGroup);
     if (subGroups.length === 0) {
       // サブグループなし（SKIRT/BAG/HAT/SHOES/SOCKSなど）は category.csv に出力しない
       if (!mainGroup) missingSubGroupNos.push(productNo);
