@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useFsProducts } from '../hooks/useFsProducts';
@@ -40,6 +40,19 @@ type ReviewRow = {
   status: ImportRowStatus;
   diffKeys: string[];
   selected: boolean;
+};
+
+type SpecData = {
+  measureNames: string[];
+  sizeRows: { label: string; values: string[] }[];
+};
+
+type SupplementAlerts = {
+  totalProducts: number;
+  noCaption: string[];
+  noSpec: string[];
+  noMaterial: string[];
+  specNoRows: string[];
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -243,6 +256,91 @@ function buildHeaderIdx(headers: readonly string[]): Map<string, number> {
   return new Map(headers.map((h, i) => [h, i]));
 }
 
+// Material compositions extracted from 2026_3_swatch.pdf (18 pages, image-based PDF).
+// Keys are 7-digit 品番. Entries can be overridden via the material xlsx upload slot.
+const SWATCH_MATERIAL_DEFAULT: Record<string, string> = {
+  '1263301': 'C/100%',
+  '1263401': 'C/100%',
+  '1263303': 'C/90% PE/10%',
+  '1263304': 'C/100%',
+  '1263503': 'PE/100%',
+  '1263201': 'C/100% <別地>PE/100%',
+  '1263305': 'C/80% PE/20% <別地>C/75% PE/25%',
+  '1263402': 'PE/100%',
+  '1263403': 'PE/75% NY/25%',
+  '1263504': 'PE/100%',
+  '1263601': 'NY/90% PU/10% <別地>PE/95% PU/5%',
+  '1263602': 'C/60% PE/34% PU/6% <別地>NY/90% PU/10%',
+  '1263603': 'NY/85% PU/15%',
+  '1263620': 'C/85% PU/15%',
+  '1263621': 'PE/100% <別地>NY/92% PU/8%',
+  '1263605': 'C/95% PU/5%',
+  '1263606': 'PE/65% C/35%',
+  '1263701': 'PE/65% C/35%',
+  '1263608': 'PE/95% PU/5%',
+  '1263609': 'C/100% <別地>PE/82% C/18%',
+  '1263707': 'PE/100% <別地>C/95% PU/5%',
+  '1263702': 'NY/90% PU/10%',
+  '1263622': 'C/100%',
+  '1263613': 'NY/92% PU/8% <別地>C/60% NY/30% PU/10%',
+  '1263611': 'C/95% PU/5%',
+  '1263703': 'PE/92% PU/8% <別地>AC/85% PU/15%',
+  '1263614': 'PE/100% <別地>PE/95% PU/5%',
+  '1263615': 'C/100%',
+  '1263704': 'C/100% <別地>PE/100%',
+  '1263618': 'C/100%',
+  '1263604': 'PE/100%',
+  '1263705': 'C/85% PU/15%',
+  '1263901': 'NY/68% PE/31% PU/1%',
+  '1263902': 'PE/50% NY/50%',
+  '1263904': 'NY/97% PE/2% PU/1%',
+  '1263905': 'C/56% AC/24% NY/17% PU/3%',
+  '1263906': 'C/56% AC/24% NY/17% PU/3%',
+  '1263907': 'NY/98% PE/1% PU/1%',
+  '1263960': 'PE/100%',
+  '1263961': 'PE/75% PU/25%',
+  // Big Tee (pages 10-17) — all C/100%
+  '1264601': 'C/100%', '1264602': 'C/100%', '1264603': 'C/100%',
+  '1264604': 'C/100%', '1264605': 'C/100%', '1264606': 'C/100%',
+  '1264607': 'C/100%', '1264608': 'C/100%', '1264609': 'C/100%',
+  '1264611': 'C/100%', '1264613': 'C/100%', '1264615': 'C/100%',
+  '1264616': 'C/100%', '1264617': 'C/100%', '1264622': 'C/100%',
+  '1264623': 'C/100%', '1264619': 'C/100%', '1264627': 'C/100%',
+  '1264629': 'C/100%', '1264630': 'C/100%', '1264632': 'C/100%',
+  '1264610': 'C/100%', '1264612': 'C/100%', '1264614': 'C/100%',
+  '1264618': 'C/100%', '1264620': 'C/100%', '1264621': 'C/100%',
+  '1264624': 'C/100%', '1264628': 'C/100%', '1264625': 'C/100%',
+  '1264626': 'C/100%', '1264631': 'C/100%', '1264633': 'C/100%',
+  // Sanrio collab (page 18)
+  '1251008': 'C/100%',
+  '1251009': 'C/100%',
+  // Additions: products missing from initial map
+  '1263501': '再生繊維（リヨセル）63% / ポリエステル19% / ナイロン18% / <別地>ナイロン100%',
+  '1263607': 'ポリエステルサテン / ヒョウ柄ジャージ / <別地>シアーチュール',
+  '1263931': 'コットンレース',
+  '1263930': 'レース',
+  '1263940': 'ナイロンツイル / <別地>メッシュ',
+  '1263941': 'ナイロンタフタ',
+  '1263944': 'ナイロンタフタ / <別地>メッシュ',
+  '1263950': '合成皮革・メッシュ',
+  '1263970': 'ポリエステルタフタ',
+};
+
+const MATERIAL_CODE_MAP: Record<string, string> = {
+  C: 'コットン', PE: 'ポリエステル', PU: 'ポリウレタン',
+  NY: 'ナイロン', AC: 'アクリル', RA: 'レーヨン', W: 'ウール',
+};
+
+// ノベルティ品番はfutureshop商品登録対象外のためCSV出力・補完チェックから除外
+// 今後ノベルティが増えた場合はここに追加する
+const EXCLUDED_PRODUCT_NOS = new Set([
+  '1260001', // CAN MIRROR ノベルティ
+]);
+
+function isExcludedProductNo(productNo: string): boolean {
+  return EXCLUDED_PRODUCT_NOS.has(productNo);
+}
+
 // Fixed values to inject into every ccGoods row, keyed by exact futureshop header name
 const CCGOODS_FIXED: Record<string, string> = {
   'ステータス':                     '1',
@@ -254,7 +352,256 @@ const CCGOODS_FIXED: Record<string, string> = {
   '在庫数切れメール閾値':           '0',
 };
 
-function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
+// ── Supplement file parsers ───────────────────────────────────────────────────
+
+async function parseCaptionFile(buffer: ArrayBuffer): Promise<Map<string, string>> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  const map = new Map<string, string>();
+  const sevenDigit = /^\d{7}$/;
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
+    for (const row of raw) {
+      const c0 = String(row[0] ?? '').trim();
+      const c1 = String(row[1] ?? '').trim();
+      const c2 = String(row[2] ?? '').trim();
+      if (sevenDigit.test(c0) && c1) {
+        map.set(c0, c1);
+      } else if (sevenDigit.test(c1) && c2) {
+        map.set(c1, c2);
+      }
+    }
+  }
+  return map;
+}
+
+function isPartsRow(row: string[], measureCount: number): boolean {
+  if (String(row[0] ?? '').trim() || String(row[1] ?? '').trim()) return false;
+  const vals = Array.from({ length: measureCount }, (_, i) => String(row[i + 2] ?? '').trim());
+  const nonEmpty = vals.filter((v) => v);
+  if (nonEmpty.length === 0) return false;
+  return nonEmpty.every((v) => /[\u3040-\u30FF\u4E00-\u9FFF]/.test(v) && !/\d/.test(v));
+}
+
+async function parseSpecFile(buffer: ArrayBuffer): Promise<Map<string, SpecData>> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  const map = new Map<string, SpecData>();
+  const sevenDigit = /^\d{7}$/;
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
+    let currentProduct: string | null = null;
+    let measureNames: string[] = [];
+    let partNames: string[] = [];
+    let sizeRows: { label: string; values: string[] }[] = [];
+
+    const flush = () => {
+      if (!currentProduct || measureNames.length === 0 || sizeRows.length === 0) return;
+      const combinedNames = measureNames.map((m, i) => {
+        const p = partNames[i] ?? '';
+        return p ? `${p} ${m}` : m;
+      });
+      // Shoe size pattern: first column named 'サイズ' with non-numeric values → promote to labels
+      const sizeColIdx = combinedNames.indexOf('サイズ');
+      let finalNames = combinedNames;
+      let finalRows = sizeRows;
+      if (sizeColIdx >= 0) {
+        const allNonNumeric = sizeRows.every((r) => {
+          const v = (r.values[sizeColIdx] ?? '').trim();
+          return !v || isNaN(Number(v));
+        });
+        if (allNonNumeric) {
+          finalNames = combinedNames.filter((_, i) => i !== sizeColIdx);
+          finalRows = sizeRows.map((r) => ({
+            label: (r.values[sizeColIdx] ?? '').trim() || r.label,
+            values: r.values.filter((_, i) => i !== sizeColIdx),
+          }));
+        }
+      }
+      // Remove empty-header, management-memo header columns, and columns whose
+      // values contain management memo text (e.g. OP column with "※小物は…")
+      const MEMO_PATTERN = /※|記入|塗りつぶし|漏れ|背景|小物|必要に応じた|表示してください/;
+      const validColIdx = finalNames
+        .map((_, i) => i)
+        .filter((i) => {
+          const n = (finalNames[i] ?? '').trim();
+          if (!n) return false;
+          if (MEMO_PATTERN.test(n)) return false;
+          // Also drop columns whose values contain management memo text
+          if (finalRows.some((r) => MEMO_PATTERN.test(r.values[i] ?? ''))) return false;
+          return true;
+        });
+      if (validColIdx.length < finalNames.length) {
+        finalNames = validColIdx.map((i) => finalNames[i]);
+        finalRows = finalRows.map((r) => ({
+          label: r.label,
+          values: validColIdx.map((i) => r.values[i] ?? ''),
+        }));
+      }
+
+      if (finalNames.length > 0 && finalRows.length > 0)
+        map.set(currentProduct, { measureNames: finalNames, sizeRows: finalRows });
+    };
+
+    for (const row of raw) {
+      const c0 = String(row[0] ?? '').trim();
+      if (sevenDigit.test(c0)) {
+        flush();
+        currentProduct = c0;
+        measureNames = [];
+        partNames = [];
+        sizeRows = [];
+        for (let i = 2; i < row.length; i++) measureNames.push(String(row[i] ?? '').trim());
+        while (measureNames.length > 0 && !measureNames[measureNames.length - 1]) measureNames.pop();
+        partNames = new Array(measureNames.length).fill('');
+      } else if (currentProduct && !c0 && measureNames.length > 0) {
+        if (isPartsRow(row, measureNames.length)) {
+          let lastPart = '';
+          for (let i = 0; i < measureNames.length; i++) {
+            const v = String(row[i + 2] ?? '').trim();
+            if (v) lastPart = v;
+            if (lastPart) partNames[i] = lastPart;
+          }
+        } else {
+          const label = String(row[1] ?? '').trim();
+          const values = measureNames.map((_, i) => String(row[i + 2] ?? '').trim());
+          if (values.some((v) => v)) {
+            // Skip rows where all non-empty values have no digits — these are
+            // measure-name rows repeated as data (e.g. "着丈 / 肩幅 / 身幅")
+            const allTextNoDigit = values.filter((v) => v).every((v) => !/\d/.test(v));
+            if (!allTextNoDigit) sizeRows.push({ label, values });
+          }
+        }
+      }
+    }
+    flush();
+  }
+  return map;
+}
+
+async function parseMaterialXlsx(buffer: ArrayBuffer): Promise<Map<string, string>> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  // Start from hardcoded defaults; xlsx entries override individual products
+  const map = new Map<string, string>(Object.entries(SWATCH_MATERIAL_DEFAULT));
+  const sevenDigit = /^\d{7}$/;
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
+    for (const row of raw) {
+      const c0 = String(row[0] ?? '').trim();
+      const c1 = String(row[1] ?? '').trim();
+      if (sevenDigit.test(c0) && c1) map.set(c0, c1);
+    }
+  }
+  return map;
+}
+
+function formatMaterialText(material: string): string {
+  if (!material.trim()) return '';
+
+  // Normalize typos and full-width 別地 brackets
+  const normalized = material
+    .replace(/ポリステル/g, 'ポリエステル')
+    .replace(/＜別地＞/g, '<別地>');
+
+  // Japanese-format strings: split on " / " separators, join with <br>
+  // Strip <別地> before checking — it contains the kanji '別' and would
+  // otherwise cause code-based materials (PE/100% <別地>NY/...) to enter this path.
+  if (/[\u3040-\u30FF\u4E00-\u9FFF]/.test(normalized.replace(/<別地>/g, ''))) {
+    const out = normalized
+      .trim()
+      .split(/\s*\/\s*/)
+      .filter(Boolean)
+      .join('<br>');
+    return out.replace(/<別地>/g, '＜別地＞');
+  }
+
+  // Code-based format (C/100%, PE/100%, etc.)
+  const parseSection = (s: string): string => {
+    const trimmed = s.trim();
+    if (!trimmed) return '';
+    const parts: string[] = [];
+    const re = /([A-Z]+)\s*\/?\ ?\s*(\d+(?:\.\d+)?)\s*%?/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(trimmed)) !== null) {
+      const ja = MATERIAL_CODE_MAP[m[1]] ?? m[1];
+      parts.push(`${ja}${m[2]}%`);
+    }
+    return parts.length > 0 ? parts.join('<br>') : trimmed;
+  };
+
+  const [main, ...betchi] = normalized.split('<別地>');
+  const result = [parseSection(main)];
+  for (const part of betchi) {
+    const parsed = parseSection(part);
+    if (parsed) result.push(`＜別地＞${parsed}`);
+  }
+  return result.filter(Boolean).join('<br>');
+}
+
+function formatSpecHtml(spec: SpecData | undefined, material: string): string {
+  if (!spec || spec.sizeRows.length === 0) return '';
+
+  // Remove columns where every size row has an empty value
+  const activeCols = spec.measureNames
+    .map((_, i) => i)
+    .filter((i) => spec.sizeRows.some((row) => (row.values[i] ?? '').trim()));
+
+  if (activeCols.length === 0) return '';
+
+  const activeNames = activeCols.map((i) => spec.measureNames[i]);
+  const formattedMaterial = formatMaterialText(material);
+  const matHtml = formattedMaterial
+    ? `<p><font style="font-weight:bold; ">素材</font><br>${formattedMaterial}<br></p>\n`
+    : '';
+
+  const headerCells = activeNames.map((n) => `<th>${n}</th>`).join('');
+  const bodyRows = spec.sizeRows
+    .map((r) => {
+      const cells = activeCols.map((i) => `<td>${r.values[i] ?? ''}</td>`).join('');
+      return `    <tr><th>${r.label}</th>${cells}</tr>`;
+    })
+    .join('\n');
+
+  return (
+    '<details class="accordion-001">\n' +
+    '  <summary>サイズ・素材</summary>\n\n' +
+    matHtml +
+    '  <table class="table_size">\n' +
+    `    <thead><tr><th>サイズ</th>${headerCells}</tr>\n    </thead>\n` +
+    '    <tbody>\n' +
+    bodyRows + '\n' +
+    '    </tbody>\n' +
+    '  </table>\n' +
+    '</details>'
+  );
+}
+
+function formatCaptionHtml(text: string): string {
+  if (!text.trim()) return '';
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/⚫︎/g, '●').trimEnd())
+    .filter((l) => l.trim());
+  const body = lines.join('<br>\n');
+  return (
+    '<details class="accordion-001">\n' +
+    '  <summary>商品説明</summary>\n' +
+    '<p><br>' + body + '</p>\n' +
+    '</details>'
+  );
+}
+
+function generateCcGoodsCsv(
+  rows: ReviewRow[],
+  colMap: ColMap,
+  captionMap: Map<string, string>,
+  specMap: Map<string, SpecData>,
+  materialMap: Map<string, string>,
+): string {
   const lines: string[] = [toCsvRow([...CCGOODS_HEADERS])];
   const hIdx = buildHeaderIdx(CCGOODS_HEADERS);
 
@@ -273,10 +620,12 @@ function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
 
   // Second pass: one row per unique product
   const seen = new Set<string>();
+  const missingMaterialNos: string[] = [];
   for (const r of rows) {
     if (!r.selected) continue;
     const productNo = r.productNo || rv(r.rawData, colMap.productNo);
     if (!productNo || seen.has(productNo)) continue;
+    if (isExcludedProductNo(productNo)) continue;
     seen.add(productNo);
     const urlCode = r.urlCode || rv(r.rawData, colMap.urlCode) || productNo;
 
@@ -300,6 +649,11 @@ function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
     setH('JANコード',           rv(r.rawData, colMap.janCode));
     setH('バリエーション横軸名', colMap.colorDisplay ? 'カラー' : '');
     setH('バリエーション縦軸名', colMap.sizeName     ? 'サイズ' : '');
+    setH('商品説明（大）',    formatCaptionHtml(captionMap.get(productNo) ?? ''));
+    const spec = specMap.get(productNo);
+    const material = materialMap.get(productNo) ?? '';
+    if (spec && !material.trim()) missingMaterialNos.push(productNo);
+    setH('独自コメント（3）', formatSpecHtml(spec, material));
 
     // Fixed values (header-name keyed, order-independent)
     for (const [headerName, val] of Object.entries(CCGOODS_FIXED)) {
@@ -308,6 +662,12 @@ function generateCcGoodsCsv(rows: ReviewRow[], colMap: ColMap): string {
     }
 
     lines.push(toCsvRow(row));
+  }
+  if (missingMaterialNos.length > 0) {
+    console.warn(
+      `[素材未取得] 企画寸はあるが素材が未登録の品番 ${missingMaterialNos.length}件:`,
+      missingMaterialNos.join(', '),
+    );
   }
   return lines.join('\n');
 }
@@ -319,6 +679,7 @@ function generateVariationDetailCsv(rows: ReviewRow[], colMap: ColMap): string {
     if (!r.selected) continue;
     // Skip rows with no key identifiers (blank rows that may be selected via "select all")
     if (!r.skuNo && !r.productNo && !rv(r.rawData, colMap.productName)) continue;
+    if (isExcludedProductNo(r.productNo)) continue;
     const urlCode   = r.urlCode || rv(r.rawData, colMap.urlCode) || r.productNo;
     // バリエーション別選択肢（横軸）= カラー名のみ (例: "OFF WHITE")
     // バリエーション別枝番（横軸）= 数値コード (例: "02")
@@ -347,6 +708,190 @@ function generateVariationDetailCsv(rows: ReviewRow[], colMap: ColMap): string {
     ]));
   }
   return lines.join('\n');
+}
+
+// ── SupplementCheck ───────────────────────────────────────────────────────────
+
+function computeSupplementAlerts(
+  rows: ReviewRow[],
+  colMap: ColMap,
+  captionMap: Map<string, string>,
+  specMap: Map<string, SpecData>,
+  materialMap: Map<string, string>,
+): SupplementAlerts {
+  if (!rows || rows.length === 0) {
+    return { totalProducts: 0, noCaption: [], noSpec: [], noMaterial: [], specNoRows: [] };
+  }
+  const seen = new Set<string>();
+  const products: string[] = [];
+  for (const r of rows) {
+    if (!r.selected) continue;
+    const productNo = (r.productNo || rv(r.rawData ?? {}, colMap?.productNo ?? '')).trim();
+    if (!productNo || seen.has(productNo)) continue;
+    if (isExcludedProductNo(productNo)) continue;
+    seen.add(productNo);
+    products.push(productNo);
+  }
+  const noCaption: string[] = [];
+  const noSpec: string[] = [];
+  const noMaterial: string[] = [];
+  const specNoRows: string[] = [];
+  for (const p of products) {
+    if (!(captionMap?.get(p) ?? '').trim()) noCaption.push(p);
+    const spec = specMap?.get(p);
+    if (!spec) {
+      noSpec.push(p);
+    } else if ((spec.sizeRows ?? []).length === 0) {
+      specNoRows.push(p);
+    }
+    if (!(materialMap?.get(p) ?? '').trim()) noMaterial.push(p);
+  }
+  return { totalProducts: products.length, noCaption, noSpec, noMaterial, specNoRows };
+}
+
+const MAX_ALERT_DISPLAY = 20;
+
+function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
+  const { totalProducts, noCaption, noSpec, noMaterial, specNoRows } = alerts;
+
+  const warnItems = [
+    { label: 'キャプション未取得', items: noCaption },
+    { label: '企画寸未取得', items: noSpec },
+    { label: '素材未取得', items: noMaterial },
+    { label: '企画寸のサイズ行なし', items: specNoRows },
+  ].filter(({ items }) => items.length > 0);
+
+  return (
+    <div className={styles.supplementCheck}>
+      <div className={styles.supplementCheckTitle}>補完チェック</div>
+      <div className={styles.supplementCheckStats}>
+        <span>対象品番: {totalProducts}</span>
+        <span>説明あり: {totalProducts - noCaption.length} / {totalProducts}</span>
+        <span>企画寸あり: {totalProducts - noSpec.length - specNoRows.length} / {totalProducts}</span>
+        <span>素材あり: {totalProducts - noMaterial.length} / {totalProducts}</span>
+      </div>
+      {warnItems.length === 0 ? (
+        <div className={styles.supplementCheckOk}>チェックOK — 全項目揃っています</div>
+      ) : (
+        <div className={styles.supplementAlertList}>
+          {warnItems.map(({ label, items }) => {
+            const shown = items.slice(0, MAX_ALERT_DISPLAY);
+            const rest = items.length - shown.length;
+            return (
+              <div key={label} className={styles.supplementAlert}>
+                <span className={styles.supplementAlertLabel}>⚠ {label}: {items.length}件</span>
+                <span className={styles.supplementAlertNos}>
+                  {shown.join(', ')}{rest > 0 ? ` ほか${rest}件` : ''}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SupplementPanel ───────────────────────────────────────────────────────────
+
+type SupplementSlotProps = {
+  label: string;
+  hint: string;
+  accept?: string;
+  filename: string;
+  loading: boolean;
+  onFile: (file: File) => Promise<void>;
+};
+
+function SupplementSlot({ label, hint, accept = '.xlsx,.xls', filename, loading, onFile }: SupplementSlotProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDrag(false);
+      const file = e.dataTransfer.files[0];
+      if (file) onFile(file);
+    },
+    [onFile],
+  );
+
+  return (
+    <div className={styles.supplementSlot}>
+      <div className={styles.supplementSlotLabel}>{label}</div>
+      <div
+        className={styles.supplementDropZone}
+        data-drag={drag || undefined}
+        data-loaded={filename ? true : undefined}
+        data-loading={loading || undefined}
+        onClick={() => !loading && inputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={handleDrop}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className={styles.fileInput}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }}
+        />
+        {loading ? '⏳ 解析中…' : filename ? `✅ ${filename}` : hint}
+      </div>
+    </div>
+  );
+}
+
+type SupplementPanelProps = {
+  captionFilename: string;
+  specFilename: string;
+  materialFilename: string;
+  captionLoading: boolean;
+  specLoading: boolean;
+  materialLoading: boolean;
+  onCaptionFile: (file: File) => Promise<void>;
+  onSpecFile: (file: File) => Promise<void>;
+  onMaterialFile: (file: File) => Promise<void>;
+};
+
+function SupplementPanel({
+  captionFilename, specFilename, materialFilename,
+  captionLoading, specLoading, materialLoading,
+  onCaptionFile, onSpecFile, onMaterialFile,
+}: SupplementPanelProps) {
+  return (
+    <div className={styles.supplementPanel}>
+      <div className={styles.supplementTitle}>補完ファイル（任意）</div>
+      <div className={styles.supplementSlots}>
+        <SupplementSlot
+          label="商品説明（大）"
+          hint="caption.xlsx をドロップ"
+          filename={captionFilename}
+          loading={captionLoading}
+          onFile={onCaptionFile}
+        />
+        <SupplementSlot
+          label="独自コメント（3） 企画寸"
+          hint="design_spec.xlsx をドロップ"
+          filename={specFilename}
+          loading={specLoading}
+          onFile={onSpecFile}
+        />
+        <SupplementSlot
+          label="独自コメント（3）素材"
+          hint="swatch.pdf / 素材上書き.xlsx をドロップ"
+          accept=".xlsx,.xls,.csv,.pdf,application/pdf"
+          filename={materialFilename}
+          loading={materialLoading}
+          onFile={onMaterialFile}
+        />
+      </div>
+    </div>
+  );
 }
 
 // ── StepIndicator ─────────────────────────────────────────────────────────────
@@ -778,7 +1323,24 @@ export function ImportTab({ user }: ImportTabProps) {
   const [savedNew, setSavedNew] = useState(0);
   const [savedDiff, setSavedDiff] = useState(0);
 
+  const [captionMap, setCaptionMap] = useState<Map<string, string>>(new Map());
+  const [specMap, setSpecMap] = useState<Map<string, SpecData>>(new Map());
+  const [materialMap, setMaterialMap] = useState<Map<string, string>>(
+    () => new Map(Object.entries(SWATCH_MATERIAL_DEFAULT)),
+  );
+  const [captionFilename, setCaptionFilename] = useState('');
+  const [specFilename, setSpecFilename] = useState('');
+  const [materialFilename, setMaterialFilename] = useState('');
+  const [captionLoading, setCaptionLoading] = useState(false);
+  const [specLoading, setSpecLoading] = useState(false);
+  const [materialLoading, setMaterialLoading] = useState(false);
+
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
+
+  const supplementAlerts = useMemo(
+    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap),
+    [reviewRows, colMap, captionMap, specMap, materialMap],
+  );
 
   const handleFile = async (file: File) => {
     setParseLoading(true);
@@ -819,6 +1381,51 @@ export function ImportTab({ user }: ImportTabProps) {
     }
   };
 
+  const handleCaptionFile = async (file: File) => {
+    setCaptionLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      setCaptionMap(await parseCaptionFile(buffer));
+      setCaptionFilename(file.name);
+    } catch {
+      // silent — supplement is optional
+    } finally {
+      setCaptionLoading(false);
+    }
+  };
+
+  const handleSpecFile = async (file: File) => {
+    setSpecLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      setSpecMap(await parseSpecFile(buffer));
+      setSpecFilename(file.name);
+    } catch {
+      // silent — supplement is optional
+    } finally {
+      setSpecLoading(false);
+    }
+  };
+
+  const handleMaterialFile = async (file: File) => {
+    setMaterialLoading(true);
+    try {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        // PDF: just show filename; SWATCH_MATERIAL_DEFAULT already loaded as initial state
+        setMaterialFilename(file.name);
+      } else {
+        const buffer = await file.arrayBuffer();
+        setMaterialMap(await parseMaterialXlsx(buffer));
+        setMaterialFilename(file.name);
+      }
+    } catch {
+      // silent — supplement is optional
+    } finally {
+      setMaterialLoading(false);
+    }
+  };
+
   const handleToColumns = () => {
     if (!selectedSheet) return;
     setColMap(autoDetect(selectedSheet.headers));
@@ -838,7 +1445,7 @@ export function ImportTab({ user }: ImportTabProps) {
     setReviewRows((prev) => prev.map((r) => ({ ...r, selected: v })));
 
   const handleDownloadCcGoods = () =>
-    downloadCsv('ccGoods.csv', generateCcGoodsCsv(reviewRows, colMap));
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(reviewRows, colMap, captionMap, specMap, materialMap));
 
   const handleDownloadVariation = () =>
     downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(reviewRows, colMap));
@@ -958,6 +1565,12 @@ export function ImportTab({ user }: ImportTabProps) {
     setSavedDiff(0);
     setParseError(null);
     setSaveError(null);
+    setCaptionMap(new Map());
+    setSpecMap(new Map());
+    setMaterialMap(new Map(Object.entries(SWATCH_MATERIAL_DEFAULT)));
+    setCaptionFilename('');
+    setSpecFilename('');
+    setMaterialFilename('');
   };
 
   return (
@@ -989,18 +1602,32 @@ export function ImportTab({ user }: ImportTabProps) {
       )}
 
       {step === 'review' && (
-        <ReviewStep
-          rows={reviewRows}
-          colMap={colMap}
-          saving={saving}
-          error={saveError}
-          onToggle={handleToggle}
-          onToggleAll={handleToggleAll}
-          onBack={() => setStep('columns')}
-          onSave={handleSave}
-          onDownloadCcGoods={handleDownloadCcGoods}
-          onDownloadVariation={handleDownloadVariation}
-        />
+        <>
+          <SupplementPanel
+            captionFilename={captionFilename}
+            specFilename={specFilename}
+            materialFilename={materialFilename}
+            captionLoading={captionLoading}
+            specLoading={specLoading}
+            materialLoading={materialLoading}
+            onCaptionFile={handleCaptionFile}
+            onSpecFile={handleSpecFile}
+            onMaterialFile={handleMaterialFile}
+          />
+          <SupplementCheckPanel alerts={supplementAlerts} />
+          <ReviewStep
+            rows={reviewRows}
+            colMap={colMap}
+            saving={saving}
+            error={saveError}
+            onToggle={handleToggle}
+            onToggleAll={handleToggleAll}
+            onBack={() => setStep('columns')}
+            onSave={handleSave}
+            onDownloadCcGoods={handleDownloadCcGoods}
+            onDownloadVariation={handleDownloadVariation}
+          />
+        </>
       )}
 
       {step === 'done' && (
