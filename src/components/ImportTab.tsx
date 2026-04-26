@@ -54,6 +54,7 @@ type SupplementAlerts = {
   noSpec: string[];
   noMaterial: string[];
   specNoRows: string[];
+  noReleaseDate: string[];
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -65,6 +66,8 @@ const EMPTY_COLMAP: ColMap = {
 };
 const PREVIEW_ROWS = 5;
 const MAX_PREVIEW_COLS = 10;
+const DEFAULT_RELEASE_YEAR = 2026;
+const RELEASE_TIME_SUFFIX = '12:00';
 const STEP_ORDER: Step[] = ['upload', 'sheet', 'columns', 'review'];
 const STEP_LABELS: Record<Step, string> = {
   upload: 'ファイル', sheet: 'シート選択',
@@ -630,6 +633,111 @@ async function parseMaterialXlsx(buffer: ArrayBuffer): Promise<Map<string, strin
   return map;
 }
 
+// Convert various date representations to YYYYMMDD12:00 (futureshop 販売期間(From) format)
+function formatSaleStartDate(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+
+  // Excel date serial (numeric)
+  if (typeof value === 'number' && value > 0) {
+    const ms = (value - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}${mo}${dd}${RELEASE_TIME_SUFFIX}`;
+  }
+
+  const s = String(value).trim();
+  if (!s) return '';
+
+  // YYYY/M/D or YYYY/MM/DD
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (m) {
+    return `${m[1]}${m[2].padStart(2, '0')}${m[3].padStart(2, '0')}${RELEASE_TIME_SUFFIX}`;
+  }
+
+  // M/D or M月D日 (year-less → DEFAULT_RELEASE_YEAR)
+  m = s.match(/^(\d{1,2})[\/月](\d{1,2})日?$/);
+  if (m) {
+    return `${DEFAULT_RELEASE_YEAR}${m[1].padStart(2, '0')}${m[2].padStart(2, '0')}${RELEASE_TIME_SUFFIX}`;
+  }
+
+  // YYYY年M月D日
+  m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
+  if (m) {
+    return `${m[1]}${m[2].padStart(2, '0')}${m[3].padStart(2, '0')}${RELEASE_TIME_SUFFIX}`;
+  }
+
+  return '';
+}
+
+// Parse MD xlsx to extract Map<productNo(7-digit), saleStartDate(YYYYMMDD12:00)>
+// Scans all sheets; identifies the STORE 発売日 column by header keywords.
+async function parseReleaseDateFile(buffer: ArrayBuffer): Promise<Map<string, string>> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: true });
+  const result = new Map<string, string>();
+  const sevenDigit = /^\d{7}$/;
+
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true }) as unknown[][];
+    if (raw.length < 2) continue;
+
+    // Phase 1: find the STORE 発売日 column index
+    // Strategy A: single cell matches "STORE" + ("発売日"|"納期")
+    // Strategy B: row has cell exactly "STORE" → look in next rows at same col for "発売日"|"納期"
+    const SCAN_ROWS = Math.min(raw.length, 20);
+    let storeDateCol = -1;
+
+    outer:
+    for (let ri = 0; ri < SCAN_ROWS; ri++) {
+      const row = raw[ri] as unknown[];
+      for (let ci = 0; ci < row.length; ci++) {
+        const cell = String(row[ci] ?? '').trim();
+        if (/STORE/i.test(cell) && /発売日|納期/.test(cell)) {
+          storeDateCol = ci;
+          break outer;
+        }
+        if (/^STORE$/i.test(cell)) {
+          // Look down for 発売日 in same or ±1 adjacent columns
+          for (let ri2 = ri + 1; ri2 <= Math.min(ri + 4, raw.length - 1); ri2++) {
+            const row2 = raw[ri2] as unknown[];
+            for (const dc of [0, 1, -1]) {
+              const ci2 = ci + dc;
+              if (ci2 < 0) continue;
+              const c2 = String(row2[ci2] ?? '').trim();
+              if (/発売日|納期/.test(c2)) {
+                storeDateCol = ci2;
+                break outer;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (storeDateCol === -1) continue;
+
+    // Phase 2: map 7-digit product numbers to STORE 発売日
+    for (const rawRow of raw) {
+      const row = rawRow as unknown[];
+      let productNo: string | null = null;
+      for (const cell of row) {
+        const s = String(cell ?? '').trim();
+        if (sevenDigit.test(s)) { productNo = s; break; }
+      }
+      if (!productNo) continue;
+      if (result.has(productNo)) continue; // first sheet wins
+      const dateVal = row[storeDateCol];
+      const formatted = formatSaleStartDate(dateVal);
+      if (formatted) result.set(productNo, formatted);
+    }
+  }
+
+  return result;
+}
+
 function formatMaterialText(material: string): string {
   if (!material.trim()) return '';
 
@@ -732,6 +840,7 @@ function generateCcGoodsCsv(
   captionMap: Map<string, string>,
   specMap: Map<string, SpecData>,
   materialMap: Map<string, string>,
+  releaseDateMap: Map<string, string>,
 ): string {
   const lines: string[] = [toCsvRow([...CCGOODS_HEADERS])];
   const hIdx = buildHeaderIdx(CCGOODS_HEADERS);
@@ -783,6 +892,7 @@ function generateCcGoodsCsv(
     setH('メイングループ',       mainGroup);
     setH('本体価格',            rv(r.rawData, colMap.price).replace(/[^0-9.]/g, ''));
     setH('JANコード',           rv(r.rawData, colMap.janCode));
+    setH('販売期間(From)',      releaseDateMap.get(productNo) ?? '');
     setH('バリエーション横軸名', colMap.colorDisplay ? 'カラー' : '');
     setH('バリエーション縦軸名', colMap.sizeName     ? 'サイズ' : '');
     setH('商品説明（大）',    formatCaptionHtml(captionMap.get(productNo) ?? ''));
@@ -910,9 +1020,10 @@ function computeSupplementAlerts(
   captionMap: Map<string, string>,
   specMap: Map<string, SpecData>,
   materialMap: Map<string, string>,
+  releaseDateMap: Map<string, string>,
 ): SupplementAlerts {
   if (!rows || rows.length === 0) {
-    return { totalProducts: 0, noCaption: [], noSpec: [], noMaterial: [], specNoRows: [] };
+    return { totalProducts: 0, noCaption: [], noSpec: [], noMaterial: [], specNoRows: [], noReleaseDate: [] };
   }
   const seen = new Set<string>();
   const products: string[] = [];
@@ -928,6 +1039,7 @@ function computeSupplementAlerts(
   const noSpec: string[] = [];
   const noMaterial: string[] = [];
   const specNoRows: string[] = [];
+  const noReleaseDate: string[] = [];
   for (const p of products) {
     if (!(captionMap?.get(p) ?? '').trim()) noCaption.push(p);
     const spec = specMap?.get(p);
@@ -937,20 +1049,22 @@ function computeSupplementAlerts(
       specNoRows.push(p);
     }
     if (!(materialMap?.get(p) ?? '').trim()) noMaterial.push(p);
+    if (!(releaseDateMap?.get(p) ?? '').trim()) noReleaseDate.push(p);
   }
-  return { totalProducts: products.length, noCaption, noSpec, noMaterial, specNoRows };
+  return { totalProducts: products.length, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate };
 }
 
 const MAX_ALERT_DISPLAY = 20;
 
 function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
-  const { totalProducts, noCaption, noSpec, noMaterial, specNoRows } = alerts;
+  const { totalProducts, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate } = alerts;
 
   const warnItems = [
     { label: 'キャプション未取得', items: noCaption },
     { label: '企画寸未取得', items: noSpec },
     { label: '素材未取得', items: noMaterial },
     { label: '企画寸のサイズ行なし', items: specNoRows },
+    { label: '販売期間From未取得', items: noReleaseDate },
   ].filter(({ items }) => items.length > 0);
 
   return (
@@ -1042,18 +1156,21 @@ type SupplementPanelProps = {
   captionFilename: string;
   specFilename: string;
   materialFilename: string;
+  mdFilename: string;
   captionLoading: boolean;
   specLoading: boolean;
   materialLoading: boolean;
+  mdLoading: boolean;
   onCaptionFile: (file: File) => Promise<void>;
   onSpecFile: (file: File) => Promise<void>;
   onMaterialFile: (file: File) => Promise<void>;
+  onMdFile: (file: File) => Promise<void>;
 };
 
 function SupplementPanel({
-  captionFilename, specFilename, materialFilename,
-  captionLoading, specLoading, materialLoading,
-  onCaptionFile, onSpecFile, onMaterialFile,
+  captionFilename, specFilename, materialFilename, mdFilename,
+  captionLoading, specLoading, materialLoading, mdLoading,
+  onCaptionFile, onSpecFile, onMaterialFile, onMdFile,
 }: SupplementPanelProps) {
   return (
     <div className={styles.supplementPanel}>
@@ -1080,6 +1197,13 @@ function SupplementPanel({
           filename={materialFilename}
           loading={materialLoading}
           onFile={onMaterialFile}
+        />
+        <SupplementSlot
+          label="販売期間（From）発売日"
+          hint="1251MD.xlsx をドロップ"
+          filename={mdFilename}
+          loading={mdLoading}
+          onFile={onMdFile}
         />
       </div>
     </div>
@@ -1556,12 +1680,15 @@ export function ImportTab({ user }: ImportTabProps) {
   const [captionLoading, setCaptionLoading] = useState(false);
   const [specLoading, setSpecLoading] = useState(false);
   const [materialLoading, setMaterialLoading] = useState(false);
+  const [releaseDateMap, setReleaseDateMap] = useState<Map<string, string>>(new Map());
+  const [mdFilename, setMdFilename] = useState('');
+  const [mdLoading, setMdLoading] = useState(false);
 
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
 
   const supplementAlerts = useMemo(
-    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap),
-    [reviewRows, colMap, captionMap, specMap, materialMap],
+    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap),
+    [reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap],
   );
 
   const handleFile = async (file: File) => {
@@ -1648,6 +1775,19 @@ export function ImportTab({ user }: ImportTabProps) {
     }
   };
 
+  const handleMdFile = async (file: File) => {
+    setMdLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      setReleaseDateMap(await parseReleaseDateFile(buffer));
+      setMdFilename(file.name);
+    } catch {
+      // silent — supplement is optional
+    } finally {
+      setMdLoading(false);
+    }
+  };
+
   const handleToColumns = () => {
     if (!selectedSheet) return;
     setColMap(autoDetect(selectedSheet.headers));
@@ -1667,7 +1807,7 @@ export function ImportTab({ user }: ImportTabProps) {
     setReviewRows((prev) => prev.map((r) => ({ ...r, selected: v })));
 
   const handleDownloadCcGoods = () =>
-    downloadCsv('ccGoods.csv', generateCcGoodsCsv(reviewRows, colMap, captionMap, specMap, materialMap));
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap));
 
   const handleDownloadVariation = () =>
     downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(reviewRows, colMap));
@@ -1832,12 +1972,15 @@ export function ImportTab({ user }: ImportTabProps) {
             captionFilename={captionFilename}
             specFilename={specFilename}
             materialFilename={materialFilename}
+            mdFilename={mdFilename}
             captionLoading={captionLoading}
             specLoading={specLoading}
             materialLoading={materialLoading}
+            mdLoading={mdLoading}
             onCaptionFile={handleCaptionFile}
             onSpecFile={handleSpecFile}
             onMaterialFile={handleMaterialFile}
+            onMdFile={handleMdFile}
           />
           <SupplementCheckPanel alerts={supplementAlerts} />
           <ReviewStep
