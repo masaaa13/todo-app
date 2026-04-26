@@ -654,6 +654,13 @@
   flex-shrink: 0;
 }
 
+.supplementAlertReason {
+  font-size: 0.72rem;
+  color: #92400e;
+  font-style: italic;
+  width: 100%;
+}
+
 .supplementAlertNos {
   color: #78350f;
   word-break: break-all;

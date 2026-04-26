@@ -48,6 +48,15 @@ type SpecData = {
   sizeRows: { label: string; values: string[] }[];
 };
 
+type ReleaseDateParseResult = {
+  productDateMap: Map<string, string>; // productNo → date (populated when MD has 7-digit nos)
+  weekDateMap: Map<string, string>;    // weekLabel → date (always populated)
+  hasProductNos: boolean;
+  sheetNames: string[];
+  detectedProductNos: string[];
+  detectedWeekLabels: string[];
+};
+
 type SupplementAlerts = {
   totalProducts: number;
   noCaption: string[];
@@ -55,6 +64,7 @@ type SupplementAlerts = {
   noMaterial: string[];
   specNoRows: string[];
   noReleaseDate: string[];
+  releaseDateSkipReason: string;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -679,45 +689,77 @@ function normalizeWeekLabel(label: string): string {
   return m ? m[1] : label.trim();
 }
 
-// Parse MD xlsx → Map<weekLabel, formattedDate>
-// The MD table has no product numbers; it uses week-block structure:
-//   col0: "5/2週"    col1: "発売日"
-//   col0: "(5/4～)"  col1: "SHOP:5/8(金)"
-//   col0: ""         col1: "STORE:5/6(水)"   ← target
-async function parseReleaseDateFile(buffer: ArrayBuffer): Promise<Map<string, string>> {
+// Parse MD xlsx → ReleaseDateParseResult
+// Builds weekDateMap (week-label → date) and productDateMap (productNo → date, when MD has 7-digit nos).
+// If MD has no product numbers (hasProductNos=false), auto-fill should be suppressed.
+async function parseReleaseDateFile(buffer: ArrayBuffer): Promise<ReleaseDateParseResult> {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
-  const result = new Map<string, string>(); // weekLabel → YYYYMMDD12:00
+
+  const productDateMap = new Map<string, string>();
+  const weekDateMap = new Map<string, string>();
+  const detectedProductNos: string[] = [];
+  const detectedWeekLabels: string[] = [];
+  const sevenDigit = /^\d{7}$/;
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true }) as unknown[][];
     if (raw.length < 2) continue;
 
+    // Phase 1: Build weekDateMap from week-block structure
+    //   col0: "5/2週"      col1: "発売日"
+    //   col0: "(5/4～5/10)" col1: "SHOP:5/8(金)"
+    //   col0: ""            col1: "STORE:5/6(水)"  ← target
     let currentWeekLabel = '';
     for (const rawRow of raw) {
       const col0 = String(rawRow[0] ?? '').trim();
       const col1 = String(rawRow[1] ?? '').trim();
-
-      // Detect week-label row: col0 contains "M/N週"
       if (/\d+\/\d+週/.test(col0)) {
         currentWeekLabel = normalizeWeekLabel(col0);
+        if (!detectedWeekLabels.includes(currentWeekLabel)) detectedWeekLabels.push(currentWeekLabel);
       }
-
-      // Detect STORE date: col1 starts with "STORE:"
       if (currentWeekLabel && /^STORE:/i.test(col1)) {
-        // Extract "M/D" from "STORE:5/6(水)"
         const dateRaw = col1.replace(/^STORE:/i, '').replace(/\(.+?\)/, '').trim();
         const formatted = formatSaleStartDate(dateRaw);
-        if (formatted && !result.has(currentWeekLabel)) {
-          result.set(currentWeekLabel, formatted);
+        if (formatted && !weekDateMap.has(currentWeekLabel)) weekDateMap.set(currentWeekLabel, formatted);
+        currentWeekLabel = '';
+      }
+    }
+
+    // Phase 2: Scan for 7-digit product numbers (for MD tables that include them)
+    // For each 7-digit cell, try to find a STORE date in the same row's columns
+    for (const rawRow of raw) {
+      const row = rawRow as unknown[];
+      let productNo: string | null = null;
+      let productNoColIdx = -1;
+      for (let ci = 0; ci < row.length; ci++) {
+        const s = String(row[ci] ?? '').trim();
+        if (sevenDigit.test(s)) { productNo = s; productNoColIdx = ci; break; }
+      }
+      if (!productNo || productDateMap.has(productNo)) continue;
+      if (!detectedProductNos.includes(productNo)) detectedProductNos.push(productNo);
+      // Look for STORE: value in remaining columns of same row
+      for (let ci = productNoColIdx + 1; ci < row.length; ci++) {
+        const cell = String(row[ci] ?? '').trim();
+        if (/^STORE:/i.test(cell)) {
+          const dateRaw = cell.replace(/^STORE:/i, '').replace(/\(.+?\)/, '').trim();
+          const formatted = formatSaleStartDate(dateRaw);
+          if (formatted) productDateMap.set(productNo, formatted);
+          break;
         }
-        currentWeekLabel = ''; // consumed — reset for next week block
       }
     }
   }
 
-  return result;
+  return {
+    productDateMap,
+    weekDateMap,
+    hasProductNos: productDateMap.size > 0,
+    sheetNames: wb.SheetNames,
+    detectedProductNos,
+    detectedWeekLabels,
+  };
 }
 
 function formatMaterialText(material: string): string {
@@ -1003,9 +1045,16 @@ function computeSupplementAlerts(
   specMap: Map<string, SpecData>,
   materialMap: Map<string, string>,
   releaseDateMap: Map<string, string>,
+  releaseDateParseResult: ReleaseDateParseResult | null,
 ): SupplementAlerts {
-  if (!rows || rows.length === 0) {
-    return { totalProducts: 0, noCaption: [], noSpec: [], noMaterial: [], specNoRows: [], noReleaseDate: [] };
+  const emptyBase = { totalProducts: 0, noCaption: [], noSpec: [], noMaterial: [], specNoRows: [], noReleaseDate: [], releaseDateSkipReason: '' };
+  if (!rows || rows.length === 0) return emptyBase;
+
+  let releaseDateSkipReason = '';
+  if (!releaseDateParseResult) {
+    releaseDateSkipReason = 'MD表が未投入です';
+  } else if (!releaseDateParseResult.hasProductNos) {
+    releaseDateSkipReason = 'MD表に商品番号が存在しないため、週ラベル推定による自動反映を停止しています';
   }
   const seen = new Set<string>();
   const products: string[] = [];
@@ -1033,20 +1082,20 @@ function computeSupplementAlerts(
     if (!(materialMap?.get(p) ?? '').trim()) noMaterial.push(p);
     if (!(releaseDateMap?.get(p) ?? '').trim()) noReleaseDate.push(p);
   }
-  return { totalProducts: products.length, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate };
+  return { totalProducts: products.length, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate, releaseDateSkipReason };
 }
 
 const MAX_ALERT_DISPLAY = 20;
 
 function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
-  const { totalProducts, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate } = alerts;
+  const { totalProducts, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate, releaseDateSkipReason } = alerts;
 
-  const warnItems = [
+  const warnItems: { label: string; items: string[]; reason?: string }[] = [
     { label: 'キャプション未取得', items: noCaption },
     { label: '企画寸未取得', items: noSpec },
     { label: '素材未取得', items: noMaterial },
     { label: '企画寸のサイズ行なし', items: specNoRows },
-    { label: '販売期間From未取得', items: noReleaseDate },
+    { label: '販売期間From未取得', items: noReleaseDate, reason: releaseDateSkipReason || undefined },
   ].filter(({ items }) => items.length > 0);
 
   return (
@@ -1062,12 +1111,13 @@ function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
         <div className={styles.supplementCheckOk}>チェックOK — 全項目揃っています</div>
       ) : (
         <div className={styles.supplementAlertList}>
-          {warnItems.map(({ label, items }) => {
+          {warnItems.map(({ label, items, reason }) => {
             const shown = items.slice(0, MAX_ALERT_DISPLAY);
             const rest = items.length - shown.length;
             return (
               <div key={label} className={styles.supplementAlert}>
                 <span className={styles.supplementAlertLabel}>⚠ {label}: {items.length}件</span>
+                {reason && <span className={styles.supplementAlertReason}>{reason}</span>}
                 <span className={styles.supplementAlertNos}>
                   {shown.join(', ')}{rest > 0 ? ` ほか${rest}件` : ''}
                 </span>
@@ -1667,32 +1717,34 @@ export function ImportTab({ user }: ImportTabProps) {
   const [captionLoading, setCaptionLoading] = useState(false);
   const [specLoading, setSpecLoading] = useState(false);
   const [materialLoading, setMaterialLoading] = useState(false);
-  const [weekDateMap, setWeekDateMap] = useState<Map<string, string>>(new Map());
+  const [releaseDateParseResult, setReleaseDateParseResult] = useState<ReleaseDateParseResult | null>(null);
   const [mdFilename, setMdFilename] = useState('');
   const [mdLoading, setMdLoading] = useState(false);
 
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
 
-  // Resolve weekDateMap (from MD) + reviewRows.rawData['納期'] → productNo → saleStartDate
+  // Build releaseDateMap: productNo → saleStartDate
+  // Only populated from productDateMap (when MD has 7-digit nos).
+  // Week-label-only inference is suppressed (unsafe — no product-level guarantee).
   const releaseDateMap = useMemo<Map<string, string>>(() => {
-    if (weekDateMap.size === 0) return new Map();
-    const map = new Map<string, string>();
-    const seen = new Set<string>();
-    for (const r of reviewRows) {
-      const productNo = (r.productNo || rv(r.rawData, colMap.productNo)).trim();
-      if (!productNo || seen.has(productNo)) continue;
-      seen.add(productNo);
-      const noki = (r.rawData['納期'] ?? '').trim();
-      const weekKey = normalizeWeekLabel(noki);
-      const date = weekDateMap.get(weekKey);
-      if (date) map.set(productNo, date);
+    if (!releaseDateParseResult) return new Map();
+    const { productDateMap, weekDateMap, hasProductNos, sheetNames, detectedProductNos, detectedWeekLabels } = releaseDateParseResult;
+    console.log('[MD解析] シート:', sheetNames);
+    console.log('[MD解析] 週ラベル数:', detectedWeekLabels.length, detectedWeekLabels);
+    console.log('[MD解析] 7桁品番数:', detectedProductNos.length, detectedProductNos.slice(0, 10));
+    console.log('[MD解析] hasProductNos:', hasProductNos);
+    if (!hasProductNos) {
+      console.log('[販売期間From] MD表に品番なし → 自動入力停止（週ラベル推定も停止）');
+      console.log('[販売期間From] weekDateMap keys:', [...weekDateMap.keys()]);
+      return new Map();
     }
-    return map;
-  }, [reviewRows, weekDateMap, colMap.productNo]);
+    console.log('[販売期間From] productDateMap:', [...productDateMap.entries()]);
+    return productDateMap;
+  }, [releaseDateParseResult]);
 
   const supplementAlerts = useMemo(
-    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap),
-    [reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap],
+    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap, releaseDateParseResult),
+    [reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap, releaseDateParseResult],
   );
 
   const handleFile = async (file: File) => {
@@ -1783,7 +1835,7 @@ export function ImportTab({ user }: ImportTabProps) {
     setMdLoading(true);
     try {
       const buffer = await file.arrayBuffer();
-      setWeekDateMap(await parseReleaseDateFile(buffer));
+      setReleaseDateParseResult(await parseReleaseDateFile(buffer));
       setMdFilename(file.name);
     } catch {
       // silent — supplement is optional
