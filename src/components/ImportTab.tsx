@@ -387,6 +387,8 @@ const MAIN_GROUP_RULES: GroupRule[] = [
 ];
 
 // category.csv サブグループ判定ルール（先勝ち）
+// FS_カテゴリー.xlsx の対応表に存在するサブグループのみ列挙（先勝ち）
+// SKIRT / BAG / HAT / SHOES / SOCKS はサブグループなし → ルールに含めない
 const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['L/S TEE', 'LONG SLEEVE TEE', 'LONG SLEEVE'], group: 'TOPS/T-SHIRT/LONG SLEEVE' },
   { keywords: ['S/S TEE', 'SHORT SLEEVE TEE', 'TEE'], group: 'TOPS/T-SHIRT/SHORT SLEEVE' },
@@ -400,22 +402,17 @@ const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['TOPS'], group: 'TOPS' },
   { keywords: ['BLOUSE', 'BLOUSES'], group: 'SHIRTS-BLOUSE/BLOUSES' },
   { keywords: ['SHIRT'], group: 'SHIRTS-BLOUSE/SHIRT' },
-  { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JUMPER SKIRT' },
+  { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JAMPER SKIRT' },
   { keywords: ['ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL'], group: 'ONE PIECE/ONE PIECE' },
-  { keywords: ['SKIRT'], group: 'SKIRT' },
   { keywords: ['DENIM'], group: 'PANTS/DENIM' },
   { keywords: ['SHORT PANTS'], group: 'PANTS/SHORT PANTS' },
   { keywords: ['SALOPETTE'], group: 'PANTS/SALOPETTE' },
   { keywords: ['PANTS'], group: 'PANTS/PANTS' },
   { keywords: ['OUTER', 'COAT', 'BLOUSON'], group: 'JACKET-OUTER/OUTER' },
   { keywords: ['JACKET'], group: 'JACKET-OUTER/JACKET' },
-  { keywords: ['POUCH', 'BAG'], group: 'BAG' },
   { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING', 'HARNESS'], group: 'GOODS/ACCESSORIES' },
   { keywords: ['UMBRELLA'], group: 'GOODS/UMBRELLA' },
   { keywords: ['NECK WARMER'], group: 'GOODS/NECK WARMER' },
-  { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
-  { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
-  { keywords: ['SOCKS'], group: 'SOCKS' },
   { keywords: ['SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD'], group: 'GOODS/SWIM WEAR' },
 ];
 
@@ -860,9 +857,12 @@ function generateCategoryCsv(rows: ReviewRow[], colMap: ColMap): string {
     if (!productName) continue;
     const urlCode = r.urlCode || rv(r.rawData, colMap.urlCode) || productNo;
 
-    const subGroups = inferSubGroups(productName);
+    const mainGroup = inferMainGroup(productName);
+    // futureshop仕様: メイングループと同一の表示先グループは登録不可
+    const subGroups = inferSubGroups(productName).filter((sg) => sg !== mainGroup);
     if (subGroups.length === 0) {
-      missingSubGroupNos.push(productNo);
+      // サブグループなし（SKIRT/BAG/HAT/SHOES/SOCKSなど）は category.csv に出力しない
+      if (!mainGroup) missingSubGroupNos.push(productNo);
       continue;
     }
 
