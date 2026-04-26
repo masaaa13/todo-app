@@ -673,65 +673,47 @@ function formatSaleStartDate(value: unknown): string {
 
 // Parse MD xlsx to extract Map<productNo(7-digit), saleStartDate(YYYYMMDD12:00)>
 // Scans all sheets; identifies the STORE 発売日 column by header keywords.
+// Normalize "5/2週～" or "3/6週～4/1週" → "5/2週"
+function normalizeWeekLabel(label: string): string {
+  const m = label.trim().match(/^(\d+\/\d+週)/);
+  return m ? m[1] : label.trim();
+}
+
+// Parse MD xlsx → Map<weekLabel, formattedDate>
+// The MD table has no product numbers; it uses week-block structure:
+//   col0: "5/2週"    col1: "発売日"
+//   col0: "(5/4～)"  col1: "SHOP:5/8(金)"
+//   col0: ""         col1: "STORE:5/6(水)"   ← target
 async function parseReleaseDateFile(buffer: ArrayBuffer): Promise<Map<string, string>> {
   const XLSX = await import('xlsx');
-  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: true });
-  const result = new Map<string, string>();
-  const sevenDigit = /^\d{7}$/;
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  const result = new Map<string, string>(); // weekLabel → YYYYMMDD12:00
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true }) as unknown[][];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
     if (raw.length < 2) continue;
 
-    // Phase 1: find the STORE 発売日 column index
-    // Strategy A: single cell matches "STORE" + ("発売日"|"納期")
-    // Strategy B: row has cell exactly "STORE" → look in next rows at same col for "発売日"|"納期"
-    const SCAN_ROWS = Math.min(raw.length, 20);
-    let storeDateCol = -1;
-
-    outer:
-    for (let ri = 0; ri < SCAN_ROWS; ri++) {
-      const row = raw[ri] as unknown[];
-      for (let ci = 0; ci < row.length; ci++) {
-        const cell = String(row[ci] ?? '').trim();
-        if (/STORE/i.test(cell) && /発売日|納期/.test(cell)) {
-          storeDateCol = ci;
-          break outer;
-        }
-        if (/^STORE$/i.test(cell)) {
-          // Look down for 発売日 in same or ±1 adjacent columns
-          for (let ri2 = ri + 1; ri2 <= Math.min(ri + 4, raw.length - 1); ri2++) {
-            const row2 = raw[ri2] as unknown[];
-            for (const dc of [0, 1, -1]) {
-              const ci2 = ci + dc;
-              if (ci2 < 0) continue;
-              const c2 = String(row2[ci2] ?? '').trim();
-              if (/発売日|納期/.test(c2)) {
-                storeDateCol = ci2;
-                break outer;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if (storeDateCol === -1) continue;
-
-    // Phase 2: map 7-digit product numbers to STORE 発売日
+    let currentWeekLabel = '';
     for (const rawRow of raw) {
-      const row = rawRow as unknown[];
-      let productNo: string | null = null;
-      for (const cell of row) {
-        const s = String(cell ?? '').trim();
-        if (sevenDigit.test(s)) { productNo = s; break; }
+      const col0 = String(rawRow[0] ?? '').trim();
+      const col1 = String(rawRow[1] ?? '').trim();
+
+      // Detect week-label row: col0 contains "M/N週"
+      if (/\d+\/\d+週/.test(col0)) {
+        currentWeekLabel = normalizeWeekLabel(col0);
       }
-      if (!productNo) continue;
-      if (result.has(productNo)) continue; // first sheet wins
-      const dateVal = row[storeDateCol];
-      const formatted = formatSaleStartDate(dateVal);
-      if (formatted) result.set(productNo, formatted);
+
+      // Detect STORE date: col1 starts with "STORE:"
+      if (currentWeekLabel && /^STORE:/i.test(col1)) {
+        // Extract "M/D" from "STORE:5/6(水)"
+        const dateRaw = col1.replace(/^STORE:/i, '').replace(/\(.+?\)/, '').trim();
+        const formatted = formatSaleStartDate(dateRaw);
+        if (formatted && !result.has(currentWeekLabel)) {
+          result.set(currentWeekLabel, formatted);
+        }
+        currentWeekLabel = ''; // consumed — reset for next week block
+      }
     }
   }
 
@@ -1685,11 +1667,28 @@ export function ImportTab({ user }: ImportTabProps) {
   const [captionLoading, setCaptionLoading] = useState(false);
   const [specLoading, setSpecLoading] = useState(false);
   const [materialLoading, setMaterialLoading] = useState(false);
-  const [releaseDateMap, setReleaseDateMap] = useState<Map<string, string>>(new Map());
+  const [weekDateMap, setWeekDateMap] = useState<Map<string, string>>(new Map());
   const [mdFilename, setMdFilename] = useState('');
   const [mdLoading, setMdLoading] = useState(false);
 
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
+
+  // Resolve weekDateMap (from MD) + reviewRows.rawData['納期'] → productNo → saleStartDate
+  const releaseDateMap = useMemo<Map<string, string>>(() => {
+    if (weekDateMap.size === 0) return new Map();
+    const map = new Map<string, string>();
+    const seen = new Set<string>();
+    for (const r of reviewRows) {
+      const productNo = (r.productNo || rv(r.rawData, colMap.productNo)).trim();
+      if (!productNo || seen.has(productNo)) continue;
+      seen.add(productNo);
+      const noki = (r.rawData['納期'] ?? '').trim();
+      const weekKey = normalizeWeekLabel(noki);
+      const date = weekDateMap.get(weekKey);
+      if (date) map.set(productNo, date);
+    }
+    return map;
+  }, [reviewRows, weekDateMap, colMap.productNo]);
 
   const supplementAlerts = useMemo(
     () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap),
@@ -1784,7 +1783,7 @@ export function ImportTab({ user }: ImportTabProps) {
     setMdLoading(true);
     try {
       const buffer = await file.arrayBuffer();
-      setReleaseDateMap(await parseReleaseDateFile(buffer));
+      setWeekDateMap(await parseReleaseDateFile(buffer));
       setMdFilename(file.name);
     } catch {
       // silent — supplement is optional
