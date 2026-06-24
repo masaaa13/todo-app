@@ -61,12 +61,27 @@ export function useAuth() {
   }, []);
 
   const signInWithEmail = async (email: string) => {
-    if (!supabase) return { error: null };
+    if (!supabase) {
+      const err = { message: 'Supabase環境変数が設定されていません', status: 0, name: 'ConfigError' };
+      console.error('[auth] signInWithEmail: Supabase not configured');
+      return { error: err };
+    }
     setAuthError(null);
-    return supabase.auth.signInWithOtp({
+    const emailRedirectTo = window.location.origin;
+    console.info('[auth] signInWithEmail:', { email, emailRedirectTo });
+    const result = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo },
     });
+    if (result.error) {
+      console.error('[auth] signInWithEmail failed:', {
+        message: result.error.message,
+        status: result.error.status,
+        name: result.error.name,
+        cause: (result.error as unknown as { cause?: unknown }).cause,
+      });
+    }
+    return result;
   };
 
   const signOut = async () => {
