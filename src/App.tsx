@@ -1,17 +1,13 @@
 import { useState } from 'react';
-import { isSupabaseConfigured } from './lib/supabase';
 import { useAuth } from './hooks/useAuth';
 import { useTasks } from './hooks/useTasks';
 import { useReminder } from './hooks/useReminder';
-import { usePushSubscription } from './hooks/usePushSubscription';
-import { AuthGate } from './components/AuthGate';
 import { AppTabs } from './components/AppTabs';
 import type { AppTab } from './components/AppTabs';
 import { TaskForm } from './components/TaskForm';
 import { TaskList } from './components/TaskList';
 import { FilterTabs } from './components/FilterTabs';
 import { SearchBar } from './components/SearchBar';
-import { NotificationSettings } from './components/NotificationSettings';
 import { ProductsTab } from './components/ProductsTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
@@ -23,9 +19,8 @@ import type { SortType } from './types/sort';
 import styles from './App.module.css';
 
 function App() {
-  const { user, loading: authLoading, authError, signInWithEmail, signOut } = useAuth();
+  const { user } = useAuth();
   const { tasks, loading, error, addTask, toggleTask, deleteTask, editTask, clearCompleted } = useTasks(user);
-  const { status: pushStatus, loading: pushLoading, subscribe, unsubscribe } = usePushSubscription(user);
 
   const [activeTab, setActiveTab] = useState<AppTab>('tasks');
   const [filter, setFilter] = useState<FilterType>('all');
@@ -33,18 +28,6 @@ function App() {
   const [search, setSearch] = useState('');
 
   useReminder(tasks);
-
-  if (authLoading) {
-    return (
-      <div className={styles.wrapper}>
-        <div className={styles.loadingFull}>読み込み中...</div>
-      </div>
-    );
-  }
-
-  if (isSupabaseConfigured && !user) {
-    return <AuthGate onSignIn={signInWithEmail} authError={authError} />;
-  }
 
   const activeCount = tasks.filter((t) => !t.completed).length;
   const doneCount = tasks.filter((t) => t.completed).length;
@@ -56,27 +39,11 @@ function App() {
         <header className={styles.header}>
           <div className={styles.titleRow}>
             <h1 className={styles.title}>EC ToDo</h1>
-            {user && (
-              <div className={styles.userRow}>
-                <span className={styles.userEmail}>{user.email}</span>
-                <button className={styles.signOutButton} onClick={signOut}>ログアウト</button>
-              </div>
-            )}
           </div>
           {activeTab === 'tasks' && (
             <SearchBar value={search} onChange={setSearch} />
           )}
         </header>
-
-        {user && (
-          <NotificationSettings
-            pushStatus={pushStatus}
-            pushLoading={pushLoading}
-            user={user}
-            onSubscribe={subscribe}
-            onUnsubscribe={unsubscribe}
-          />
-        )}
 
         {error && <div className={styles.errorBanner} role="alert">{error}</div>}
 
