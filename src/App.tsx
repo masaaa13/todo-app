@@ -8,6 +8,7 @@ import { TaskList } from './components/TaskList';
 import { FilterTabs } from './components/FilterTabs';
 import { SearchBar } from './components/SearchBar';
 import { ProductsTab } from './components/ProductsTab';
+import { WishlistTab } from './components/WishlistTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
 import { ImportTab } from './components/ImportTab';
@@ -34,6 +35,7 @@ function loadMdProductsFromStorage(): { products: MdProduct[]; savedAt: string |
 
 const NAV_ITEMS: { tab: AppTab; icon: string; label: string }[] = [
   { tab: 'products',  icon: '📦', label: '商品一覧' },
+  { tab: 'wishlist',  icon: '📋', label: '欲しいものリスト' },
   { tab: 'import',    icon: '⬇',  label: '商品登録CSV' },
   { tab: 'inventory', icon: '📊', label: '在庫候補' },
   { tab: 'schedules', icon: '🗓', label: 'スケジュール' },
@@ -123,8 +125,13 @@ function App() {
             />
           )}
 
+          {/* Wishlist: full width, no inner wrapper */}
+          {activeTab === 'wishlist' && (
+            <WishlistTab products={mdProducts} />
+          )}
+
           {/* All other tabs: centered standard width */}
-          {activeTab !== 'products' && (
+          {activeTab !== 'products' && activeTab !== 'wishlist' && (
             <div className={styles.standardWrap}>
 
               {/* Tasks */}
