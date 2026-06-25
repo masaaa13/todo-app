@@ -2,15 +2,22 @@
   min-height: 100vh;
   background: var(--color-bg);
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   padding: 48px 16px 80px;
+  gap: 0;
 }
 
 @media (max-width: 480px) {
   .wrapper {
     padding: 20px 12px 60px;
   }
+}
+
+.productsContainer {
+  width: 100%;
+  max-width: 1440px;
+  padding: 0;
 }
 
 .card {

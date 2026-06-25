@@ -125,14 +125,7 @@ function App() {
           )
         )}
 
-        {/* ── EC tabs ── */}
-        {activeTab === 'products'  && (
-          <ProductsTab
-            products={mdProducts}
-            savedAt={mdProductsSavedAt}
-            onClearProducts={clearMdProductsStorage}
-          />
-        )}
+        {/* ── Non-products EC tabs ── */}
         {activeTab === 'schedules' && <ScheduleTab user={user} />}
         {activeTab === 'inventory' && <InventoryTab user={user} />}
         {activeTab === 'import'    && (
@@ -148,6 +141,17 @@ function App() {
           />
         )}
       </main>
+
+      {/* ── Products tab (wide, outside narrow card) ── */}
+      {activeTab === 'products' && (
+        <div className={styles.productsContainer}>
+          <ProductsTab
+            products={mdProducts}
+            savedAt={mdProductsSavedAt}
+            onClearProducts={clearMdProductsStorage}
+          />
+        </div>
+      )}
     </div>
   );
 }

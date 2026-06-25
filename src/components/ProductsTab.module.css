@@ -186,8 +186,8 @@
 
 .mainLayout {
   display: grid;
-  grid-template-columns: 210px 1fr;
-  gap: 10px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
 }
 
@@ -417,6 +417,10 @@
   font-weight: 600;
   color: var(--color-text);
   white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
 .categoryBadge {
