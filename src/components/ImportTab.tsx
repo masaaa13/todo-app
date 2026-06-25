@@ -197,7 +197,7 @@ function detectCol(headers: string[], exact: string[], partial: string[]): strin
 function autoDetect(headers: string[]): ColMap {
   return {
     productNo:    detectCol(headers, ['品番', '商品番号'], []),
-    skuNo:        detectCol(headers, ['商品管理番号'], ['商品id', '管理番号', 'sku番号']),
+    skuNo:        detectCol(headers, ['商品管理番号', '倉庫コード'], ['商品id', '管理番号', 'sku番号']),
     urlCode:      detectCol(headers, [], ['urlコード', '商品url']),
     productName:  detectCol(headers, ['商品名'], ['品名']),
     // 税込 takes priority over 単価; futureshop requires tax-inclusive price
@@ -398,16 +398,16 @@ type GroupRule = { keywords: string[]; group: string };
 
 // メイングループ判定ルール（先勝ち）
 const MAIN_GROUP_RULES: GroupRule[] = [
-  { keywords: ['JUMPER SKIRT', 'ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL'], group: 'ONE PIECE' },
-  { keywords: ['TOPS', 'L/S TEE', 'S/S TEE', 'LONG SLEEVE TEE', 'SHORT SLEEVE TEE', 'T-SHIRT', 'TEE', 'CUTSEW', 'KNIT', 'CARDIGAN', 'SWEAT', 'HOODIE', 'BOLERO', 'BUSTIER'], group: 'TOPS' },
+  { keywords: ['JUMPER SKIRT', 'ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL', 'BABY DOLL'], group: 'ONE PIECE' },
+  { keywords: ['TOPS', 'L/S TEE', 'S/S TEE', 'LONG SLEEVE TEE', 'SHORT SLEEVE TEE', 'T-SHIRT', 'TEE', 'CUTSEW', 'KNIT', 'CARDIGAN', 'SWEAT', 'HOODIE', 'BOLERO', 'BUSTIER', 'BRA'], group: 'TOPS' },
   { keywords: ['BLOUSE', 'BLOUSES', 'SHIRT'], group: 'SHIRTS-BLOUSE' },
   { keywords: ['SKIRT'], group: 'SKIRT' },
-  { keywords: ['SHORT PANTS', 'SALOPETTE', 'DENIM', 'PANTS'], group: 'PANTS' },
-  { keywords: ['OUTER', 'BLOUSON', 'COAT', 'JACKET'], group: 'JACKET-OUTER' },
+  { keywords: ['SHORT PANTS', 'SALOPETTE', 'DENIM', 'PANTS', 'DRAWERS'], group: 'PANTS' },
+  { keywords: ['OUTER', 'BLOUSON', 'COAT', 'JACKET', 'MA-1'], group: 'JACKET-OUTER' },
   { keywords: ['HEAD DRESS', 'HAT', 'CAP', 'BONNET'], group: 'HAT' },
   { keywords: ['SNEAKERS', 'SANDALS', 'SHOES'], group: 'SHOES' },
   { keywords: ['SOCKS'], group: 'SOCKS' },
-  { keywords: ['POUCH', 'BAG', 'ACCESSORIES', 'CHARM', 'KEY RING', 'UMBRELLA', 'NECK WARMER', 'SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD', 'HARNESS'], group: 'GOODS' },
+  { keywords: ['POUCH', 'BAG', 'ACCESSORIES', 'CHARM', 'KEY RING', 'UMBRELLA', 'NECK WARMER', 'SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD', 'HARNESS', 'BELT', 'MUFFLER', 'CARDCASE', 'BADGE'], group: 'GOODS' },
 ];
 
 // category.csv サブグループ判定ルール（先勝ち）
@@ -421,21 +421,21 @@ const SUB_GROUP_RULES: GroupRule[] = [
   { keywords: ['KNIT'], group: 'TOPS/KNIT' },
   { keywords: ['CARDIGAN'], group: 'TOPS/CARDIGAN' },
   { keywords: ['SWEAT', 'HOODIE'], group: 'TOPS/SWEAT' },
-  { keywords: ['BOLERO', 'BUSTIER'], group: 'TOPS/OTHER' },
+  { keywords: ['BOLERO', 'BUSTIER', 'BRA'], group: 'TOPS/OTHER' },
   { keywords: ['TOPS'], group: 'TOPS/CUTSEW' },
   { keywords: ['BLOUSE', 'BLOUSES'], group: 'SHIRTS-BLOUSE/BLOUSES' },
   { keywords: ['SHIRT'], group: 'SHIRTS-BLOUSE/SHIRT' },
   { keywords: ['JUMPER SKIRT'], group: 'ONE PIECE/JAMPER SKIRT' },
-  { keywords: ['ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL'], group: 'ONE PIECE/ONE PIECE' },
+  { keywords: ['ONE PIECE', 'ONE-PIECE', 'DRESS', 'BABYDOLL', 'BABY DOLL'], group: 'ONE PIECE/ONE PIECE' },
   { keywords: ['DENIM'], group: 'PANTS/DENIM' },
   { keywords: ['SHORT PANTS'], group: 'PANTS/SHORT PANTS' },
   { keywords: ['SALOPETTE'], group: 'PANTS/SALOPETTE' },
-  { keywords: ['PANTS'], group: 'PANTS/PANTS' },
-  { keywords: ['OUTER', 'COAT', 'BLOUSON'], group: 'JACKET-OUTER/OUTER' },
+  { keywords: ['DRAWERS', 'PANTS'], group: 'PANTS/PANTS' },
+  { keywords: ['OUTER', 'COAT', 'BLOUSON', 'MA-1'], group: 'JACKET-OUTER/OUTER' },
   { keywords: ['JACKET'], group: 'JACKET-OUTER/JACKET' },
-  { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING', 'HARNESS'], group: 'GOODS/ACCESSORIES' },
+  { keywords: ['ACCESSORIES', 'CHARM', 'KEY RING', 'HARNESS', 'BELT', 'BADGE', 'CARDCASE'], group: 'GOODS/ACCESSORIES' },
   { keywords: ['UMBRELLA'], group: 'GOODS/UMBRELLA' },
-  { keywords: ['NECK WARMER'], group: 'GOODS/NECK WARMER' },
+  { keywords: ['NECK WARMER', 'MUFFLER'], group: 'GOODS/NECK WARMER' },
   { keywords: ['SWIM WEAR', 'SWIMSUIT', 'RASH GUARD', 'RUSH GUARD'], group: 'GOODS/SWIM WEAR' },
 ];
 
@@ -461,6 +461,12 @@ const PRODUCT_CATEGORY_OVERRIDES: Record<string, {
   '1263931': { mainGroup: 'HAT',       subGroups: [] },
   '1263941': { mainGroup: 'TOPS',      subGroups: ['TOPS/OTHER'] },
   '1263503': { mainGroup: 'ONE PIECE', subGroups: ['ONE PIECE/JAMPER SKIRT'] },
+  // 1266101: "SHIRT BLOUSON" → SHIRTキーワードが先勝ちするため上書き
+  '1266101': { mainGroup: 'JACKET-OUTER', subGroups: ['JACKET-OUTER/OUTER'] },
+  // 1266104: "DENIM JACKET" → DENIMキーワードがJACKETより先勝ちするため上書き
+  '1266104': { mainGroup: 'JACKET-OUTER', subGroups: ['JACKET-OUTER/JACKET'] },
+  // 1266931: "KNIT FLIGHT CAP" → KNITキーワードがCAPより先勝ちするため上書き
+  '1266931': { mainGroup: 'HAT', subGroups: [] },
 };
 
 // ccGoods F列「メイングループ」を推定する。品番上書き → コラボ → 商品名推定の順。
