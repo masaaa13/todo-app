@@ -15,6 +15,7 @@ export type WishlistItem = {
   productNo: string;
   productName: string;
   category: string;
+  status: string;
   releaseDate?: string;
   skuCount?: number;
   reason: string;
