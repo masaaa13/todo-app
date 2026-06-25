@@ -885,17 +885,34 @@ function formatMaterialText(material: string): string {
 }
 
 function formatSpecHtml(spec: SpecData | undefined, material: string): string {
-  if (!spec || spec.sizeRows.length === 0) return '';
+  const formattedMaterial = formatMaterialText(material);
+
+  if (!spec || spec.sizeRows.length === 0) {
+    if (!formattedMaterial) return '';
+    return (
+      '<details class="accordion-001">\n' +
+      '  <summary>サイズ・素材</summary>\n\n' +
+      `<p><font style="font-weight:bold; ">素材</font><br>${formattedMaterial}<br></p>\n` +
+      '</details>'
+    );
+  }
 
   // Remove columns where every size row has an empty value
   const activeCols = spec.measureNames
     .map((_, i) => i)
     .filter((i) => spec.sizeRows.some((row) => (row.values[i] ?? '').trim()));
 
-  if (activeCols.length === 0) return '';
+  if (activeCols.length === 0) {
+    if (!formattedMaterial) return '';
+    return (
+      '<details class="accordion-001">\n' +
+      '  <summary>サイズ・素材</summary>\n\n' +
+      `<p><font style="font-weight:bold; ">素材</font><br>${formattedMaterial}<br></p>\n` +
+      '</details>'
+    );
+  }
 
   const activeNames = activeCols.map((i) => spec.measureNames[i]);
-  const formattedMaterial = formatMaterialText(material);
   const matHtml = formattedMaterial
     ? `<p><font style="font-weight:bold; ">素材</font><br>${formattedMaterial}<br></p>\n`
     : '';
