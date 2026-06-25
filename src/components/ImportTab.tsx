@@ -1262,6 +1262,57 @@ function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
   );
 }
 
+// ── ManualMaterialPanel ───────────────────────────────────────────────────────
+
+type ManualMaterialPanelProps = {
+  productNos: string[];
+  reviewRows: ReviewRow[];
+  colMap: ColMap;
+  manualMaterialMap: Map<string, string>;
+  onSetMaterial: (productNo: string, text: string) => void;
+};
+
+function ManualMaterialPanel({
+  productNos, reviewRows, colMap, manualMaterialMap, onSetMaterial,
+}: ManualMaterialPanelProps) {
+  const productNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of reviewRows) {
+      if (r.productNo && !m.has(r.productNo)) m.set(r.productNo, rv(r.rawData, colMap.productName));
+    }
+    return m;
+  }, [reviewRows, colMap]);
+
+  return (
+    <div className={styles.manualMaterialPanel}>
+      <div className={styles.manualMaterialTitle}>素材未取得の手動補完</div>
+      <p className={styles.manualMaterialHint}>
+        入力後、補完チェックの「素材未取得」から外れ、ccGoods.csv の独自コメント（3）に反映されます。
+      </p>
+      <div className={styles.manualMaterialList}>
+        {productNos.map((pno) => {
+          const currentVal = manualMaterialMap.get(pno) ?? '';
+          const done = Boolean(currentVal.trim());
+          return (
+            <div key={pno} className={styles.manualMaterialRow} data-done={done || undefined}>
+              <span className={styles.manualMaterialNo}>{pno}</span>
+              <span className={styles.manualMaterialName}>{productNameMap.get(pno) ?? ''}</span>
+              <input
+                className={styles.manualMaterialInput}
+                type="text"
+                placeholder="例: C/100%  PE/100% <別地>NY/90% PU/10%"
+                value={currentVal}
+                onChange={(e) => onSetMaterial(pno, e.target.value)}
+              />
+              {done && <span className={styles.manualMaterialDone}>✓</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── SupplementPanel ───────────────────────────────────────────────────────────
 
 type SupplementSlotProps = {
@@ -1857,6 +1908,16 @@ export function ImportTab({ user }: ImportTabProps) {
   const [materialMap, setMaterialMap] = useState<Map<string, string>>(
     () => new Map(Object.entries(SWATCH_MATERIAL_DEFAULT)),
   );
+  const [manualMaterialMap, setManualMaterialMap] = useState<Map<string, string>>(new Map());
+
+  // Manual entries take highest priority over materialMap (SWATCH_MATERIAL_DEFAULT + xlsx upload)
+  const mergedMaterialMap = useMemo(() => {
+    const m = new Map(materialMap);
+    for (const [k, v] of manualMaterialMap) {
+      if (v.trim()) m.set(k, v.trim());
+    }
+    return m;
+  }, [materialMap, manualMaterialMap]);
   const [captionFilename, setCaptionFilename] = useState('');
   const [specFilename, setSpecFilename] = useState('');
   const [materialFilename, setMaterialFilename] = useState('');
@@ -1904,9 +1965,26 @@ export function ImportTab({ user }: ImportTabProps) {
   }, [releaseDateParseResult, reviewRows]);
 
   const supplementAlerts = useMemo(
-    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap, releaseDateParseResult),
-    [reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap, releaseDateParseResult],
+    () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, mergedMaterialMap, releaseDateMap, releaseDateParseResult),
+    [reviewRows, colMap, captionMap, specMap, mergedMaterialMap, releaseDateMap, releaseDateParseResult],
   );
+
+  // Products to show in ManualMaterialPanel:
+  // union of currently-missing + already-entered (so entered rows remain editable)
+  const manualMaterialNos = useMemo(() => {
+    const nos = new Set(supplementAlerts.noMaterial);
+    for (const k of manualMaterialMap.keys()) nos.add(k);
+    return [...nos];
+  }, [supplementAlerts.noMaterial, manualMaterialMap]);
+
+  const handleSetManualMaterial = useCallback((productNo: string, text: string) => {
+    setManualMaterialMap((prev) => {
+      const next = new Map(prev);
+      if (text.trim()) next.set(productNo, text);
+      else next.delete(productNo);
+      return next;
+    });
+  }, []);
 
   const handleFile = async (file: File) => {
     setParseLoading(true);
@@ -2032,7 +2110,7 @@ export function ImportTab({ user }: ImportTabProps) {
   }, [reviewRows]);
 
   const handleDownloadCcGoods = () =>
-    downloadCsv('ccGoods.csv', generateCcGoodsCsv(effectiveRows, colMap, captionMap, specMap, materialMap, releaseDateMap));
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(effectiveRows, colMap, captionMap, specMap, mergedMaterialMap, releaseDateMap));
 
   const handleDownloadVariation = () =>
     downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(effectiveRows, colMap));
@@ -2066,6 +2144,7 @@ export function ImportTab({ user }: ImportTabProps) {
     setCaptionMap(new Map());
     setSpecMap(new Map());
     setMaterialMap(new Map(Object.entries(SWATCH_MATERIAL_DEFAULT)));
+    setManualMaterialMap(new Map());
     setCaptionFilename('');
     setSpecFilename('');
     setMaterialFilename('');
@@ -2116,6 +2195,15 @@ export function ImportTab({ user }: ImportTabProps) {
             onMdFile={handleMdFile}
           />
           <SupplementCheckPanel alerts={supplementAlerts} />
+          {manualMaterialNos.length > 0 && (
+            <ManualMaterialPanel
+              productNos={manualMaterialNos}
+              reviewRows={reviewRows}
+              colMap={colMap}
+              manualMaterialMap={manualMaterialMap}
+              onSetMaterial={handleSetManualMaterial}
+            />
+          )}
           <ReviewStep
             rows={reviewRows}
             colMap={colMap}
