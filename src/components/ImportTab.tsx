@@ -1099,6 +1099,7 @@ function generateCategoryCsv(rows: ReviewRow[], colMap: ColMap): string {
   const missingSubGroupNos: string[] = [];
 
   for (const r of rows) {
+    if (!r.selected) continue;
     const productNo = r.productNo || rv(r.rawData, colMap.productNo);
     if (!productNo || isExcludedProductNo(productNo)) continue;
     if (seenProducts.has(productNo)) continue;
@@ -1134,6 +1135,37 @@ function generateCategoryCsv(rows: ReviewRow[], colMap: ColMap): string {
 
   // futureshop は CRLF 推奨
   return lines.join('\r\n');
+}
+
+function generateMissingSupplementsCsv(
+  alerts: SupplementAlerts,
+  reviewRows: ReviewRow[],
+  colMap: ColMap,
+): string {
+  const headers = ['品番', '商品名', '未取得項目', '理由', '備考'];
+  const lines = [toCsvRow(headers)];
+
+  const productNameMap = new Map<string, string>();
+  for (const r of reviewRows) {
+    if (r.productNo && !productNameMap.has(r.productNo)) {
+      productNameMap.set(r.productNo, rv(r.rawData, colMap.productName));
+    }
+  }
+
+  const addRows = (productNos: string[], item: string, reason: string) => {
+    for (const pno of productNos) {
+      lines.push(toCsvRow([pno, productNameMap.get(pno) ?? '', item, reason, '']));
+    }
+  };
+
+  const { noCaption, noSpec, specNoRows, noMaterial, noReleaseDate, releaseDateSkipReason } = alerts;
+  addRows(noCaption,     'キャプション未取得', 'キャプションファイルに該当品番なし');
+  addRows(noSpec,        '企画寸未取得',       '企画寸ファイルに該当品番なし');
+  addRows(specNoRows,    '企画寸サイズ行なし', '企画寸あり・サイズ行なし');
+  addRows(noMaterial,    '素材未取得',         'SWATCH_MATERIAL_DEFAULT または素材上書きに素材なし');
+  addRows(noReleaseDate, '販売期間From未取得', releaseDateSkipReason || 'MD表から販売期間を取得できなかった');
+
+  return lines.join('\n');
 }
 
 // ── SupplementCheck ───────────────────────────────────────────────────────────
@@ -1609,12 +1641,15 @@ type ReviewStepProps = {
   onDownloadCcGoods: () => void;
   onDownloadVariation: () => void;
   onDownloadCategory: () => void;
+  onDownloadMissingSupplements: () => void;
+  hasMissingSupplements: boolean;
 };
 
 function ReviewStep({
   rows, colMap, saving, error,
   onToggle, onToggleAll, onBack,
   onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
+  onDownloadMissingSupplements, hasMissingSupplements,
 }: ReviewStepProps) {
   const [filter, setFilter] = useState<ImportRowStatus | 'all'>('all');
 
@@ -1718,12 +1753,17 @@ function ReviewStep({
 
       <div className={styles.stepActions}>
         <button className={styles.backBtn} onClick={onBack} disabled={saving}>← 戻る</button>
+        <p className={styles.csvHint}>
+          {counts.selected > 0
+            ? `チェックあり（${counts.selected}件）: 選択品番のみ出力`
+            : 'チェックなし: 全件出力'}
+        </p>
         <div className={styles.csvBtnGroup}>
           <button
             className={styles.csvBtn}
             onClick={onDownloadCcGoods}
             disabled={!hasValidRows}
-            title="読込データ全体から出力（選択状態に関わらず）"
+            title={counts.selected > 0 ? `選択中の${counts.selected}件の品番のみ出力（品番単位で重複排除）` : '全品番を出力（112列）'}
           >
             ⬇ ccGoods.csv
           </button>
@@ -1731,7 +1771,7 @@ function ReviewStep({
             className={styles.csvBtn}
             onClick={onDownloadVariation}
             disabled={!hasValidRows}
-            title="読込データ全体から出力（選択状態に関わらず）"
+            title={counts.selected > 0 ? `選択中の品番に紐づくSKU行のみ出力` : '全SKU行を出力（13列）'}
           >
             ⬇ variationDetail.csv
           </button>
@@ -1739,9 +1779,17 @@ function ReviewStep({
             className={styles.csvBtn}
             onClick={onDownloadCategory}
             disabled={!hasValidRows}
-            title="サブカテゴリひもづけ用（Shift_JIS）"
+            title={counts.selected > 0 ? `選択中の品番のカテゴリ行のみ出力（Shift_JIS）` : '全品番のカテゴリ行を出力（Shift_JIS）'}
           >
             ⬇ category.csv
+          </button>
+          <button
+            className={styles.csvBtn}
+            onClick={onDownloadMissingSupplements}
+            disabled={!hasMissingSupplements}
+            title="キャプション・企画寸・素材・販売期間Fromが未取得の品番一覧"
+          >
+            ⬇ 補完未取得.csv
           </button>
         </div>
         <button
@@ -1975,14 +2023,32 @@ export function ImportTab({ user }: ImportTabProps) {
   const handleToggleAll = (v: boolean) =>
     setReviewRows((prev) => prev.map((r) => ({ ...r, selected: v })));
 
+  // When some rows are checked → export only selected. When 0 checked → export all.
+  const effectiveRows = useMemo(() => {
+    const selectedCount = reviewRows.filter((r) => r.selected).length;
+    return selectedCount > 0
+      ? reviewRows
+      : reviewRows.map((r) => ({ ...r, selected: true }));
+  }, [reviewRows]);
+
   const handleDownloadCcGoods = () =>
-    downloadCsv('ccGoods.csv', generateCcGoodsCsv(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap));
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(effectiveRows, colMap, captionMap, specMap, materialMap, releaseDateMap));
 
   const handleDownloadVariation = () =>
-    downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(reviewRows, colMap));
+    downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(effectiveRows, colMap));
 
   const handleDownloadCategory = () =>
-    downloadShiftJisCsv('category.csv', generateCategoryCsv(reviewRows, colMap));
+    downloadShiftJisCsv('category.csv', generateCategoryCsv(effectiveRows, colMap));
+
+  const handleDownloadMissingSupplements = () =>
+    downloadCsv('補完未取得.csv', generateMissingSupplementsCsv(supplementAlerts, reviewRows, colMap));
+
+  const hasMissingSupplements =
+    supplementAlerts.noCaption.length > 0 ||
+    supplementAlerts.noSpec.length > 0 ||
+    supplementAlerts.specNoRows.length > 0 ||
+    supplementAlerts.noMaterial.length > 0 ||
+    supplementAlerts.noReleaseDate.length > 0;
 
   // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
@@ -2061,6 +2127,8 @@ export function ImportTab({ user }: ImportTabProps) {
             onDownloadCcGoods={handleDownloadCcGoods}
             onDownloadVariation={handleDownloadVariation}
             onDownloadCategory={handleDownloadCategory}
+            onDownloadMissingSupplements={handleDownloadMissingSupplements}
+            hasMissingSupplements={hasMissingSupplements}
           />
         </>
       )}

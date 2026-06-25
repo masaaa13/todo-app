@@ -474,7 +474,8 @@
 .saveBtn:hover:not(:disabled) { background: #15803d; }
 .saveBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.csvBtnGroup { display: flex; gap: 6px; }
+.csvHint { margin: 4px 0 6px; font-size: 0.78rem; color: #6b7280; }
+.csvBtnGroup { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .csvBtn {
   height: 36px;
