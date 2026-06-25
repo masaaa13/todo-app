@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { useTasks } from './hooks/useTasks';
 import { useReminder } from './hooks/useReminder';
@@ -19,17 +19,46 @@ import type { SortType } from './types/sort';
 import type { MdProduct } from './types/md';
 import styles from './App.module.css';
 
+const MD_PRODUCTS_KEY = 'ecTodo.mdProducts';
+
+function loadMdProductsFromStorage(): { products: MdProduct[]; savedAt: string | null } {
+  try {
+    const raw = localStorage.getItem(MD_PRODUCTS_KEY);
+    if (!raw) return { products: [], savedAt: null };
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.products)) return { products: [], savedAt: null };
+    return { products: parsed.products, savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : null };
+  } catch {
+    return { products: [], savedAt: null };
+  }
+}
+
 function App() {
   const { user } = useAuth();
   const { tasks, loading, error, addTask, toggleTask, deleteTask, editTask, clearCompleted } = useTasks(user);
 
   const [activeTab, setActiveTab] = useState<AppTab>('tasks');
   const [mdProducts, setMdProducts] = useState<MdProduct[]>([]);
+  const [mdProductsSavedAt, setMdProductsSavedAt] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
 
   useReminder(tasks);
+
+  useEffect(() => {
+    const { products, savedAt } = loadMdProductsFromStorage();
+    if (products.length > 0) {
+      setMdProducts(products);
+      setMdProductsSavedAt(savedAt);
+    }
+  }, []);
+
+  const clearMdProductsStorage = useCallback(() => {
+    localStorage.removeItem(MD_PRODUCTS_KEY);
+    setMdProducts([]);
+    setMdProductsSavedAt(null);
+  }, []);
 
   const activeCount = tasks.filter((t) => !t.completed).length;
   const doneCount = tasks.filter((t) => t.completed).length;
@@ -97,14 +126,23 @@ function App() {
         )}
 
         {/* ── EC tabs ── */}
-        {activeTab === 'products'  && <ProductsTab products={mdProducts} />}
+        {activeTab === 'products'  && (
+          <ProductsTab
+            products={mdProducts}
+            savedAt={mdProductsSavedAt}
+            onClearProducts={clearMdProductsStorage}
+          />
+        )}
         {activeTab === 'schedules' && <ScheduleTab user={user} />}
         {activeTab === 'inventory' && <InventoryTab user={user} />}
         {activeTab === 'import'    && (
           <ImportTab
             user={user}
             onSendToProducts={(products) => {
+              const now = new Date().toISOString();
+              localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products, savedAt: now }));
               setMdProducts(products);
+              setMdProductsSavedAt(now);
               setActiveTab('products');
             }}
           />

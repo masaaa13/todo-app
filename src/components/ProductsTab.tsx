@@ -181,9 +181,26 @@ function ActionPill({ action }: ActionPillProps) {
   );
 }
 
-type ProductTableProps = { products: MdProduct[]; isReal: boolean };
+type ProductTableProps = {
+  products: MdProduct[];
+  isReal: boolean;
+  savedAt: string | null;
+  onClearProducts: () => void;
+};
 
-function ProductTable({ products, isReal }: ProductTableProps) {
+function ProductTable({ products, isReal, savedAt, onClearProducts }: ProductTableProps) {
+  const noticeText = !isReal
+    ? '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'
+    : savedAt
+    ? '商品登録CSVタブから反映・保存された商品データです。ブラウザ内に保存されています。'
+    : '商品登録CSVタブから一時反映された商品データです。リロードすると消えます。';
+
+  const handleClear = () => {
+    if (window.confirm('保存された商品一覧データをクリアします。よろしいですか？')) {
+      onClearProducts();
+    }
+  };
+
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
@@ -192,10 +209,18 @@ function ProductTable({ products, isReal }: ProductTableProps) {
         <span className={styles.tableCount}>{products.length}件</span>
       </div>
       <p className={styles.sampleNotice} data-real={isReal || undefined}>
-        {isReal
-          ? '商品登録CSVタブから一時反映された商品データです。リロードすると消えます。'
-          : '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'}
+        {noticeText}
       </p>
+      {isReal && (
+        <div className={styles.savedAtRow}>
+          {savedAt && (
+            <span className={styles.savedAtLabel}>保存日時: {formatSavedAt(savedAt)}</span>
+          )}
+          <button className={styles.clearBtn} onClick={handleClear}>
+            保存データをクリア
+          </button>
+        </div>
+      )}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
@@ -285,11 +310,27 @@ function NextPhaseCard() {
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function formatSavedAt(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}/${mo}/${day} ${h}:${min}`;
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
-type ProductsTabProps = { products?: MdProduct[] };
+type ProductsTabProps = {
+  products?: MdProduct[];
+  savedAt?: string | null;
+  onClearProducts?: () => void;
+};
 
-export function ProductsTab({ products = [] }: ProductsTabProps) {
+export function ProductsTab({ products = [], savedAt = null, onClearProducts }: ProductsTabProps) {
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
@@ -331,7 +372,7 @@ export function ProductsTab({ products = [] }: ProductsTabProps) {
         onCategory={setCategory}
         onStatus={setStatus}
       />
-      <ProductTable products={filtered} isReal={isReal} />
+      <ProductTable products={filtered} isReal={isReal} savedAt={savedAt} onClearProducts={onClearProducts ?? (() => {})} />
       <NextPhaseCard />
     </div>
   );

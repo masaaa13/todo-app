@@ -664,6 +664,37 @@
 .actionPill[data-variant='warn']    { background: #fef9c3; color: #ca8a04; }
 .actionPill[data-variant='neutral'] { background: #f3f4f6; color: #374151; }
 
+/* Saved-at row */
+.savedAtRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.savedAtLabel {
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+  flex: 1 1 auto;
+}
+
+.clearBtn {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #b91c1c;
+  background: #fff1f2;
+  border: 1.5px solid #fca5a5;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.clearBtn:hover { background: #ffe4e6; }
+
 /* Next phase card */
 .nextPhaseCard {
   background: var(--color-card);
