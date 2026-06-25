@@ -804,9 +804,181 @@
   flex-shrink: 0;
 }
 
+/* ── Page header card ── */
+.pageHeaderCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pageHeaderTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.pageHeaderDesc {
+  font-size: 0.82rem;
+  color: var(--color-text-sub);
+  margin-top: 2px;
+}
+
+.pageHeaderNote {
+  font-size: 0.74rem;
+  color: var(--color-text-sub);
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+/* ── Section card (shared wrapper) ── */
+.sectionCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionCardHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sectionCardNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: var(--color-accent);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.sectionCardDesc {
+  font-size: 0.78rem;
+  color: var(--color-text-sub);
+  margin: 0;
+}
+
+/* ── Supplement slot desc ── */
+.supplementSlotDesc {
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+  margin-top: 1px;
+  margin-bottom: 1px;
+}
+
+/* ── Status pills (補完状況) ── */
+.statusPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statusPill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg);
+  min-width: 80px;
+  gap: 2px;
+}
+
+.statusPill[data-ok] {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.statusPill[data-warn] {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.statusPillLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+  white-space: nowrap;
+}
+
+.statusPill[data-ok] .statusPillLabel { color: #166534; }
+.statusPill[data-warn] .statusPillLabel { color: #92400e; }
+
+.statusPillCount {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.statusPill[data-ok] .statusPillCount { color: #16a34a; }
+.statusPill[data-warn] .statusPillCount { color: #d97706; }
+
+/* ── CSV output card ── */
+.csvOutputBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.csvBtnPrimary {
+  height: 38px;
+  padding: 0 18px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1.5px solid #fde68a;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.csvBtnPrimary:hover:not(:disabled) { background: #fde68a; }
+.csvBtnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.csvBtnSecondary {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: var(--color-bg);
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.csvBtnSecondary:hover:not(:disabled) { background: #f3f4f6; }
+.csvBtnSecondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Responsive ── */
 @media (max-width: 520px) {
   .colMapGrid { grid-template-columns: 1fr; }
   .selectedCount { margin-left: 0; }
   .manualMaterialRow { grid-template-columns: 1fr; }
+  .statusPills { gap: 6px; }
+  .statusPill { min-width: 70px; padding: 6px 10px; }
+  .csvOutputBtns { gap: 6px; }
 }

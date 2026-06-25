@@ -1219,7 +1219,7 @@ function computeSupplementAlerts(
 
 const MAX_ALERT_DISPLAY = 20;
 
-function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
+function SupplementStatusCard({ alerts }: { alerts: SupplementAlerts }) {
   const { totalProducts, noCaption, noSpec, noMaterial, specNoRows, noReleaseDate, releaseDateSkipReason } = alerts;
 
   const warnItems: { label: string; items: string[]; reason?: string }[] = [
@@ -1230,18 +1230,50 @@ function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
     { label: '販売期間From未取得', items: noReleaseDate, reason: releaseDateSkipReason || undefined },
   ].filter(({ items }) => items.length > 0);
 
+  const totalMissing = noCaption.length + noSpec.length + noMaterial.length + specNoRows.length + noReleaseDate.length;
+
+  const statItems = [
+    { label: '商品説明', ok: totalProducts - noCaption.length, total: totalProducts },
+    { label: '企画寸', ok: totalProducts - noSpec.length - specNoRows.length, total: totalProducts },
+    { label: '素材', ok: totalProducts - noMaterial.length, total: totalProducts },
+    { label: '販売期間From', ok: totalProducts - noReleaseDate.length, total: totalProducts },
+  ];
+
   return (
-    <div className={styles.supplementCheck}>
-      <div className={styles.supplementCheckTitle}>補完チェック</div>
-      <div className={styles.supplementCheckStats}>
-        <span>対象品番: {totalProducts}</span>
-        <span>説明あり: {totalProducts - noCaption.length} / {totalProducts}</span>
-        <span>企画寸あり: {totalProducts - noSpec.length - specNoRows.length} / {totalProducts}</span>
-        <span>素材あり: {totalProducts - noMaterial.length} / {totalProducts}</span>
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>2</span>
+        補完状況
+        {totalProducts > 0 && (
+          <span className={styles.sectionCardDesc} style={{ marginLeft: 'auto', fontSize: '0.76rem' }}>
+            対象品番: {totalProducts}
+          </span>
+        )}
       </div>
-      {warnItems.length === 0 ? (
-        <div className={styles.supplementCheckOk}>チェックOK — 全項目揃っています</div>
-      ) : (
+      <div className={styles.statusPills}>
+        {statItems.map(({ label, ok, total }) => {
+          const isOk = ok === total;
+          return (
+            <div key={label} className={styles.statusPill} data-ok={isOk || undefined} data-warn={!isOk || undefined}>
+              <span className={styles.statusPillLabel}>{label}</span>
+              <span className={styles.statusPillCount}>{ok} / {total}</span>
+            </div>
+          );
+        })}
+        {totalMissing > 0 && (
+          <div className={styles.statusPill} data-warn={true}>
+            <span className={styles.statusPillLabel}>補完未取得</span>
+            <span className={styles.statusPillCount}>{totalMissing}件</span>
+          </div>
+        )}
+        {totalMissing === 0 && totalProducts > 0 && (
+          <div className={styles.statusPill} data-ok={true}>
+            <span className={styles.statusPillLabel}>全項目OK</span>
+            <span className={styles.statusPillCount}>✓</span>
+          </div>
+        )}
+      </div>
+      {warnItems.length > 0 && (
         <div className={styles.supplementAlertList}>
           {warnItems.map(({ label, items, reason }) => {
             const shown = items.slice(0, MAX_ALERT_DISPLAY);
@@ -1258,6 +1290,98 @@ function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── PageHeaderCard ────────────────────────────────────────────────────────────
+
+function PageHeaderCard() {
+  return (
+    <div className={styles.pageHeaderCard}>
+      <div className={styles.pageHeaderTitle}>商品登録CSV</div>
+      <div className={styles.pageHeaderDesc}>
+        SKU・商品説明・企画寸・素材・MD表を取り込み、FutureShop登録用CSVを作成します。
+      </div>
+      <div className={styles.pageHeaderNote}>
+        チェックあり: 選択品番のみ出力 ／ チェックなし: 全件出力
+      </div>
+    </div>
+  );
+}
+
+// ── CsvOutputCard ─────────────────────────────────────────────────────────────
+
+type CsvOutputCardProps = {
+  hasValidRows: boolean;
+  selectedCount: number;
+  manualCount: number;
+  hasMissingSupplements: boolean;
+  onDownloadCcGoods: () => void;
+  onDownloadVariation: () => void;
+  onDownloadCategory: () => void;
+  onDownloadMissingSupplements: () => void;
+  onDownloadManualMaterial: () => void;
+};
+
+function CsvOutputCard({
+  hasValidRows, selectedCount, manualCount, hasMissingSupplements,
+  onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
+  onDownloadMissingSupplements, onDownloadManualMaterial,
+}: CsvOutputCardProps) {
+  return (
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>3</span>
+        CSV出力
+      </div>
+      <p className={styles.sectionCardDesc}>
+        {selectedCount > 0
+          ? `チェックあり（${selectedCount}件）: 選択品番のみ出力します。`
+          : 'チェックなし: 全件出力します。'}
+      </p>
+      <div className={styles.csvOutputBtns}>
+        <button
+          className={styles.csvBtnPrimary}
+          onClick={onDownloadCcGoods}
+          disabled={!hasValidRows}
+          title={selectedCount > 0 ? `選択中の${selectedCount}件の品番のみ出力（112列）` : '全品番を出力（112列）'}
+        >
+          ⬇ ccGoods.csv
+        </button>
+        <button
+          className={styles.csvBtnPrimary}
+          onClick={onDownloadVariation}
+          disabled={!hasValidRows}
+          title={selectedCount > 0 ? `選択中の品番に紐づくSKU行のみ出力` : '全SKU行を出力（13列）'}
+        >
+          ⬇ variationDetail.csv
+        </button>
+        <button
+          className={styles.csvBtnPrimary}
+          onClick={onDownloadCategory}
+          disabled={!hasValidRows}
+          title={selectedCount > 0 ? `選択中の品番のカテゴリ行のみ出力（Shift_JIS）` : '全品番のカテゴリ行を出力（Shift_JIS）'}
+        >
+          ⬇ category.csv
+        </button>
+        <button
+          className={styles.csvBtnSecondary}
+          onClick={onDownloadMissingSupplements}
+          disabled={!hasMissingSupplements}
+          title="キャプション・企画寸・素材・販売期間Fromが未取得の品番一覧"
+        >
+          ⬇ 補完未取得.csv
+        </button>
+        <button
+          className={styles.csvBtnSecondary}
+          onClick={onDownloadManualMaterial}
+          disabled={manualCount === 0}
+          title="手動補完した素材をCSVで保存"
+        >
+          ⬇ 手動補完素材.csv
+        </button>
+      </div>
     </div>
   );
 }
@@ -1335,14 +1459,13 @@ type ManualMaterialPanelProps = {
   manualMaterialMap: Map<string, string>;
   noMaterialCount: number;
   onSetMaterial: (productNo: string, text: string) => void;
-  onDownloadManual: () => void;
   onImportManual: (file: File) => void;
   onClearManual: () => void;
 };
 
 function ManualMaterialPanel({
   productNos, reviewRows, colMap, manualMaterialMap, noMaterialCount,
-  onSetMaterial, onDownloadManual, onImportManual, onClearManual,
+  onSetMaterial, onImportManual, onClearManual,
 }: ManualMaterialPanelProps) {
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -1360,25 +1483,18 @@ function ManualMaterialPanel({
   );
 
   return (
-    <div className={styles.manualMaterialPanel}>
-      <div className={styles.manualMaterialHeader}>
-        <span className={styles.manualMaterialTitle}>素材未取得の手動補完</span>
-        <span className={styles.manualMaterialCount}>
+    <div className={styles.sectionCard} style={{ borderColor: '#fbbf24' }}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>4</span>
+        素材未取得の手動補完
+        <span className={styles.manualMaterialCount} style={{ marginLeft: 'auto' }}>
           手動補完: {manualCount}件 / 素材未取得: {noMaterialCount}件
         </span>
       </div>
-      <p className={styles.manualMaterialHint}>
-        入力後、補完チェックの「素材未取得」から外れ、ccGoods.csv の独自コメント（3）に反映されます。
+      <p className={styles.sectionCardDesc}>
+        スワッチPDFから素材が取得できない品番は、ここで素材を入力できます。入力内容はccGoods.csvの独自コメント（3）に反映されます。
       </p>
       <div className={styles.manualMaterialActions}>
-        <button
-          className={styles.manualMaterialBtn}
-          onClick={onDownloadManual}
-          disabled={manualCount === 0}
-          title="手動補完した素材をCSVで保存"
-        >
-          ⬇ 手動補完素材.csv
-        </button>
         <button
           className={styles.manualMaterialBtn}
           onClick={() => importRef.current?.click()}
@@ -1433,6 +1549,7 @@ function ManualMaterialPanel({
 
 type SupplementSlotProps = {
   label: string;
+  desc?: string;
   hint: string;
   accept?: string;
   filename: string;
@@ -1440,7 +1557,7 @@ type SupplementSlotProps = {
   onFile: (file: File) => Promise<void>;
 };
 
-function SupplementSlot({ label, hint, accept = '.xlsx,.xls', filename, loading, onFile }: SupplementSlotProps) {
+function SupplementSlot({ label, desc, hint, accept = '.xlsx,.xls', filename, loading, onFile }: SupplementSlotProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
 
@@ -1457,6 +1574,7 @@ function SupplementSlot({ label, hint, accept = '.xlsx,.xls', filename, loading,
   return (
     <div className={styles.supplementSlot}>
       <div className={styles.supplementSlotLabel}>{label}</div>
+      {desc && <div className={styles.supplementSlotDesc}>{desc}</div>}
       <div
         className={styles.supplementDropZone}
         data-drag={drag || undefined}
@@ -1483,7 +1601,8 @@ function SupplementSlot({ label, hint, accept = '.xlsx,.xls', filename, loading,
   );
 }
 
-type SupplementPanelProps = {
+type FileIntakeCardProps = {
+  skuFilename: string;
   captionFilename: string;
   specFilename: string;
   materialFilename: string;
@@ -1502,18 +1621,30 @@ function shortenMdFilename(filename: string): string {
   return /^\d+MD\.xlsx$/i.test(filename) ? 'MD.xlsx' : filename;
 }
 
-function SupplementPanel({
+function FileIntakeCard({
+  skuFilename,
   captionFilename, specFilename, materialFilename, mdFilename,
   captionLoading, specLoading, materialLoading, mdLoading,
   onCaptionFile, onSpecFile, onMaterialFile, onMdFile,
-}: SupplementPanelProps) {
+}: FileIntakeCardProps) {
   const mdDisplayName = mdFilename ? shortenMdFilename(mdFilename) : '';
   return (
-    <div className={styles.supplementPanel}>
-      <div className={styles.supplementTitle}>補完ファイル（任意）</div>
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>1</span>
+        ファイル取込
+      </div>
       <div className={styles.supplementSlots}>
+        <div className={styles.supplementSlot}>
+          <div className={styles.supplementSlotLabel}>SKUファイル</div>
+          <div className={styles.supplementSlotDesc}>商品番号・SKU・JAN・カラー・サイズ</div>
+          <div className={styles.supplementDropZone} data-loaded={skuFilename ? true : undefined} style={{ cursor: 'default' }}>
+            {skuFilename ? `✅ ${skuFilename}` : '未取込'}
+          </div>
+        </div>
         <SupplementSlot
           label="商品説明（大）"
+          desc="商品説明（大）"
           hint="caption.xlsx をドロップ"
           filename={captionFilename}
           loading={captionLoading}
@@ -1521,6 +1652,7 @@ function SupplementPanel({
         />
         <SupplementSlot
           label="独自コメント（3） 企画寸"
+          desc="サイズ表"
           hint="design_spec.xlsx をドロップ"
           filename={specFilename}
           loading={specLoading}
@@ -1528,6 +1660,7 @@ function SupplementPanel({
         />
         <SupplementSlot
           label="独自コメント（3）素材"
+          desc="素材表記"
           hint="swatch.pdf / 素材上書き.xlsx をドロップ"
           accept=".xlsx,.xls,.csv,.pdf,application/pdf"
           filename={materialFilename}
@@ -1536,6 +1669,7 @@ function SupplementPanel({
         />
         <SupplementSlot
           label="販売期間（From）発売日"
+          desc="販売期間From"
           hint="1251MD.xlsx をドロップ"
           filename={mdDisplayName}
           loading={mdLoading}
@@ -1805,19 +1939,9 @@ type ReviewStepProps = {
   onToggle: (idx: number) => void;
   onToggleAll: (v: boolean) => void;
   onBack: () => void;
-  onDownloadCcGoods: () => void;
-  onDownloadVariation: () => void;
-  onDownloadCategory: () => void;
-  onDownloadMissingSupplements: () => void;
-  hasMissingSupplements: boolean;
 };
 
-function ReviewStep({
-  rows, colMap, saving, error,
-  onToggle, onToggleAll, onBack,
-  onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
-  onDownloadMissingSupplements, hasMissingSupplements,
-}: ReviewStepProps) {
+function ReviewStep({ rows, colMap, saving, error, onToggle, onToggleAll, onBack }: ReviewStepProps) {
   const [filter, setFilter] = useState<ImportRowStatus | 'all'>('all');
 
   const counts = {
@@ -1828,20 +1952,20 @@ function ReviewStep({
     selected:  rows.filter((r) => r.selected).length,
   };
 
-  // CSV出力は「有効SKU行が1件以上あるか」で制御する。
-  // 重複のみ・選択済み0件でもCSV出力できるよう、選択状態と切り離す。
-  // EXCLUDED_PRODUCT_NOS（ノベルティ等）は除外対象のため有効行に含めない。
-  const hasValidRows = rows.some((r) => {
-    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
-    return (productNo && !isExcludedProductNo(productNo)) || Boolean(r.skuNo);
-  });
-
   const visible = filter === 'all' ? rows : rows.filter((r) => r.status === filter);
   const visibleSelected = visible.filter((r) => r.selected).length;
   const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
 
   return (
-    <div>
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>5</span>
+        商品確認
+      </div>
+      <p className={styles.sectionCardDesc}>
+        必要な品番にチェックを入れると、選択品番のみCSV出力できます。未選択の場合は全件出力されます。
+      </p>
+
       <div className={styles.reviewSummary}>
         <span data-type="new"       className={styles.summaryBadge}>新規 {counts.new}</span>
         <span data-type="has_diff"  className={styles.summaryBadge}>差分あり {counts.has_diff}</span>
@@ -1920,52 +2044,6 @@ function ReviewStep({
 
       <div className={styles.stepActions}>
         <button className={styles.backBtn} onClick={onBack} disabled={saving}>← 戻る</button>
-        <p className={styles.csvHint}>
-          {counts.selected > 0
-            ? `チェックあり（${counts.selected}件）: 選択品番のみ出力`
-            : 'チェックなし: 全件出力'}
-        </p>
-        <div className={styles.csvBtnGroup}>
-          <button
-            className={styles.csvBtn}
-            onClick={onDownloadCcGoods}
-            disabled={!hasValidRows}
-            title={counts.selected > 0 ? `選択中の${counts.selected}件の品番のみ出力（品番単位で重複排除）` : '全品番を出力（112列）'}
-          >
-            ⬇ ccGoods.csv
-          </button>
-          <button
-            className={styles.csvBtn}
-            onClick={onDownloadVariation}
-            disabled={!hasValidRows}
-            title={counts.selected > 0 ? `選択中の品番に紐づくSKU行のみ出力` : '全SKU行を出力（13列）'}
-          >
-            ⬇ variationDetail.csv
-          </button>
-          <button
-            className={styles.csvBtn}
-            onClick={onDownloadCategory}
-            disabled={!hasValidRows}
-            title={counts.selected > 0 ? `選択中の品番のカテゴリ行のみ出力（Shift_JIS）` : '全品番のカテゴリ行を出力（Shift_JIS）'}
-          >
-            ⬇ category.csv
-          </button>
-          <button
-            className={styles.csvBtn}
-            onClick={onDownloadMissingSupplements}
-            disabled={!hasMissingSupplements}
-            title="キャプション・企画寸・素材・販売期間Fromが未取得の品番一覧"
-          >
-            ⬇ 補完未取得.csv
-          </button>
-        </div>
-        <button
-          className={styles.saveBtn}
-          disabled
-          title="商品データのDB保存はPhase 1で実装予定です"
-        >
-          商品データ保存は次フェーズで実装予定です
-        </button>
       </div>
     </div>
   );
@@ -2267,6 +2345,26 @@ export function ImportTab({ user }: ImportTabProps) {
     supplementAlerts.noMaterial.length > 0 ||
     supplementAlerts.noReleaseDate.length > 0;
 
+  // CSV出力は「有効SKU行が1件以上あるか」で制御する。
+  // EXCLUDED_PRODUCT_NOS（ノベルティ等）は除外対象のため有効行に含めない。
+  const hasValidRows = useMemo(
+    () => reviewRows.some((r) => {
+      const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+      return (productNo && !isExcludedProductNo(productNo)) || Boolean(r.skuNo);
+    }),
+    [reviewRows, colMap],
+  );
+
+  const selectedCount = useMemo(
+    () => reviewRows.filter((r) => r.selected).length,
+    [reviewRows],
+  );
+
+  const manualCount = useMemo(
+    () => [...manualMaterialMap.values()].filter((v) => v.trim()).length,
+    [manualMaterialMap],
+  );
+
   // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
   const handleReset = () => {
@@ -2319,7 +2417,9 @@ export function ImportTab({ user }: ImportTabProps) {
 
       {step === 'review' && (
         <>
-          <SupplementPanel
+          <PageHeaderCard />
+          <FileIntakeCard
+            skuFilename={filename}
             captionFilename={captionFilename}
             specFilename={specFilename}
             materialFilename={materialFilename}
@@ -2333,7 +2433,18 @@ export function ImportTab({ user }: ImportTabProps) {
             onMaterialFile={handleMaterialFile}
             onMdFile={handleMdFile}
           />
-          <SupplementCheckPanel alerts={supplementAlerts} />
+          <SupplementStatusCard alerts={supplementAlerts} />
+          <CsvOutputCard
+            hasValidRows={hasValidRows}
+            selectedCount={selectedCount}
+            manualCount={manualCount}
+            hasMissingSupplements={hasMissingSupplements}
+            onDownloadCcGoods={handleDownloadCcGoods}
+            onDownloadVariation={handleDownloadVariation}
+            onDownloadCategory={handleDownloadCategory}
+            onDownloadMissingSupplements={handleDownloadMissingSupplements}
+            onDownloadManualMaterial={handleDownloadManualMaterial}
+          />
           {manualMaterialNos.length > 0 && (
             <ManualMaterialPanel
               productNos={manualMaterialNos}
@@ -2342,7 +2453,6 @@ export function ImportTab({ user }: ImportTabProps) {
               manualMaterialMap={manualMaterialMap}
               noMaterialCount={supplementAlerts.noMaterial.length}
               onSetMaterial={handleSetManualMaterial}
-              onDownloadManual={handleDownloadManualMaterial}
               onImportManual={handleImportManualMaterial}
               onClearManual={handleClearManualMaterial}
             />
@@ -2355,11 +2465,6 @@ export function ImportTab({ user }: ImportTabProps) {
             onToggle={handleToggle}
             onToggleAll={handleToggleAll}
             onBack={() => setStep('columns')}
-            onDownloadCcGoods={handleDownloadCcGoods}
-            onDownloadVariation={handleDownloadVariation}
-            onDownloadCategory={handleDownloadCategory}
-            onDownloadMissingSupplements={handleDownloadMissingSupplements}
-            hasMissingSupplements={hasMissingSupplements}
           />
         </>
       )}
