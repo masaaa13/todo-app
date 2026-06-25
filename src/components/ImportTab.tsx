@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import type { User } from '@supabase/supabase-js';
 import Encoding from 'encoding-japanese';
-import { supabase } from '../lib/supabase';
+// import { supabase } from '../lib/supabase'; // Phase 1: DB保存実装時に復活
 import { useFsProducts } from '../hooks/useFsProducts';
 import type { ImportRowStatus } from '../types/importJob';
 import { IMPORT_ROW_STATUS_LABELS } from '../types/importJob';
@@ -1606,7 +1606,6 @@ type ReviewStepProps = {
   onToggle: (idx: number) => void;
   onToggleAll: (v: boolean) => void;
   onBack: () => void;
-  onSave: () => void;
   onDownloadCcGoods: () => void;
   onDownloadVariation: () => void;
   onDownloadCategory: () => void;
@@ -1614,7 +1613,7 @@ type ReviewStepProps = {
 
 function ReviewStep({
   rows, colMap, saving, error,
-  onToggle, onToggleAll, onBack, onSave,
+  onToggle, onToggleAll, onBack,
   onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
 }: ReviewStepProps) {
   const [filter, setFilter] = useState<ImportRowStatus | 'all'>('all');
@@ -1747,11 +1746,10 @@ function ReviewStep({
         </div>
         <button
           className={styles.saveBtn}
-          onClick={onSave}
-          disabled={saving || counts.selected === 0}
-          title="選択した新規・差分行のみDBに取込む"
+          disabled
+          title="商品データのDB保存はPhase 1で実装予定です"
         >
-          {saving ? '保存中...' : `選択 ${counts.selected} 件を取込む`}
+          商品データ保存は次フェーズで実装予定です
         </button>
       </div>
     </div>
@@ -1791,7 +1789,7 @@ function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadV
 type ImportTabProps = { user: User | null };
 
 export function ImportTab({ user }: ImportTabProps) {
-  const { skus: existingSkus, refresh } = useFsProducts(user);
+  const { skus: existingSkus } = useFsProducts(user); // refresh: Phase 1で復活
 
   const [step, setStep] = useState<Step>('upload');
   const [filename, setFilename] = useState('');
@@ -1801,7 +1799,7 @@ export function ImportTab({ user }: ImportTabProps) {
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [parseLoading, setParseLoading] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const saving = false; // Phase 1で useState に変更予定
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNew, setSavedNew] = useState(0);
   const [savedDiff, setSavedDiff] = useState(0);
@@ -1986,109 +1984,7 @@ export function ImportTab({ user }: ImportTabProps) {
   const handleDownloadCategory = () =>
     downloadShiftJisCsv('category.csv', generateCategoryCsv(reviewRows, colMap));
 
-  const handleSave = async () => {
-    if (!supabase || !user) return;
-    setSaving(true);
-    setSaveError(null);
-
-    const selected = reviewRows.filter((r) => r.selected);
-    const now = new Date().toISOString();
-
-    try {
-      const { data: jobData, error: jobErr } = await supabase
-        .from('import_jobs')
-        .insert({
-          user_id: user.id, filename,
-          status: 'done',
-          sheet_name: selectedSheet?.name ?? null,
-          total_rows: reviewRows.length,
-          new_count:       reviewRows.filter((r) => r.status === 'new').length,
-          duplicate_count: reviewRows.filter((r) => r.status === 'duplicate').length,
-          diff_count:      reviewRows.filter((r) => r.status === 'has_diff').length,
-          imported_count: selected.length,
-          created_at: now, updated_at: now,
-        })
-        .select('id')
-        .single();
-      if (jobErr) throw new Error(jobErr.message);
-
-      const jobId = (jobData as { id: string }).id;
-
-      const BATCH = 500;
-      for (let i = 0; i < reviewRows.length; i += BATCH) {
-        const batch = reviewRows.slice(i, i + BATCH).map((r) => ({
-          job_id: jobId, user_id: user.id,
-          sheet_name: selectedSheet?.name ?? '',
-          row_index: r.idx,
-          product_no: r.productNo || null,
-          sku_no: r.skuNo || null,
-          product_url_code: r.urlCode || null,
-          raw_data: r.rawData,
-          diff_data: r.diffKeys.length > 0
-            ? Object.fromEntries(
-                r.diffKeys.map((k) => [k, { old: skuMap.get(r.skuNo)?.[k] ?? '', new: r.rawData[k] ?? '' }])
-              )
-            : null,
-          row_status: r.status,
-          selected: r.selected,
-          created_at: now,
-        }));
-        const { error: rowsErr } = await supabase.from('import_rows').insert(batch);
-        if (rowsErr) throw new Error(rowsErr.message);
-      }
-
-      const toUpsert = selected.filter((r) => r.status === 'new' || r.status === 'has_diff');
-
-      for (const r of toUpsert) {
-        if (r.productNo) {
-          await supabase.from('fs_products').upsert(
-            {
-              user_id: user.id,
-              product_no: r.productNo,
-              product_url_code: r.urlCode || null,
-              name: rv(r.rawData, colMap.productName) || null,
-              updated_at: now,
-            },
-            { onConflict: 'user_id,product_no' },
-          );
-        }
-
-        if (r.skuNo) {
-          let fsProductId: string | null = null;
-          if (r.productNo) {
-            const { data: pd } = await supabase
-              .from('fs_products')
-              .select('id')
-              .eq('user_id', user.id)
-              .eq('product_no', r.productNo)
-              .maybeSingle();
-            fsProductId = (pd as { id: string } | null)?.id ?? null;
-          }
-          await supabase.from('fs_product_skus').upsert(
-            {
-              user_id: user.id,
-              fs_product_id: fsProductId,
-              product_no: r.productNo || null,
-              sku_no: r.skuNo,
-              sku_name: rv(r.rawData, colMap.productName) || null,
-              raw_data: r.rawData,
-              updated_at: now,
-            },
-            { onConflict: 'user_id,sku_no' },
-          );
-        }
-      }
-
-      setSavedNew(toUpsert.filter((r) => r.status === 'new').length);
-      setSavedDiff(toUpsert.filter((r) => r.status === 'has_diff').length);
-      await refresh();
-      setStep('done');
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : '保存に失敗しました');
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
   const handleReset = () => {
     setStep('upload');
@@ -2162,7 +2058,6 @@ export function ImportTab({ user }: ImportTabProps) {
             onToggle={handleToggle}
             onToggleAll={handleToggleAll}
             onBack={() => setStep('columns')}
-            onSave={handleSave}
             onDownloadCcGoods={handleDownloadCcGoods}
             onDownloadVariation={handleDownloadVariation}
             onDownloadCategory={handleDownloadCategory}

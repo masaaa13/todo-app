@@ -7,7 +7,7 @@ const TAB_LABELS: Record<AppTab, string> = {
   products:  '商品管理',
   inventory: '在庫候補',
   schedules: 'スケジュール',
-  import:    'データ取込',
+  import:    '商品登録CSV',
 };
 
 const TABS: AppTab[] = ['tasks', 'products', 'inventory', 'schedules', 'import'];
