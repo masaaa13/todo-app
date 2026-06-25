@@ -1262,6 +1262,70 @@ function SupplementCheckPanel({ alerts }: { alerts: SupplementAlerts }) {
   );
 }
 
+// ── Manual material CSV helpers ───────────────────────────────────────────────
+
+function generateManualMaterialCsv(
+  manualMaterialMap: Map<string, string>,
+  reviewRows: ReviewRow[],
+  colMap: ColMap,
+): string {
+  const productNameMap = new Map<string, string>();
+  for (const r of reviewRows) {
+    if (r.productNo && !productNameMap.has(r.productNo))
+      productNameMap.set(r.productNo, rv(r.rawData, colMap.productName));
+  }
+  const lines = [toCsvRow(['品番', '商品名', '素材'])];
+  for (const [pno, mat] of manualMaterialMap) {
+    if (!mat.trim()) continue;
+    lines.push(toCsvRow([pno, productNameMap.get(pno) ?? '', mat.trim()]));
+  }
+  return lines.join('\n');
+}
+
+function parseCsvRowSimple(row: string): string[] {
+  const result: string[] = [];
+  let i = 0;
+  while (i <= row.length) {
+    if (row[i] === '"') {
+      let field = '';
+      i++;
+      while (i < row.length) {
+        if (row[i] === '"' && row[i + 1] === '"') { field += '"'; i += 2; }
+        else if (row[i] === '"') { i++; break; }
+        else field += row[i++];
+      }
+      result.push(field);
+      if (row[i] === ',') i++;
+    } else {
+      const end = row.indexOf(',', i);
+      if (end < 0) { result.push(row.slice(i)); break; }
+      result.push(row.slice(i, end));
+      i = end + 1;
+    }
+  }
+  return result;
+}
+
+function parseManualMaterialCsv(text: string): Map<string, string> {
+  const result = new Map<string, string>();
+  const stripped = text.replace(/^\uFEFF/, ''); // strip UTF-8 BOM
+  const rows = stripped.split(/\r?\n/);
+  if (rows.length < 2) return result;
+  const headers = parseCsvRowSimple(rows[0]).map((h) => h.trim());
+  const pnoIdx = headers.indexOf('品番');
+  const matIdx = headers.indexOf('素材');
+  if (pnoIdx < 0 || matIdx < 0) return result;
+  for (let i = 1; i < rows.length; i++) {
+    if (!rows[i].trim()) continue;
+    const cols = parseCsvRowSimple(rows[i]);
+    const pno = (cols[pnoIdx] ?? '').trim();
+    const mat = (cols[matIdx] ?? '').trim();
+    if (!pno || !/^\d{7}$/.test(pno) || !mat) continue;
+    result.set(pno, mat);
+  }
+  return result;
+}
+
 // ── ManualMaterialPanel ───────────────────────────────────────────────────────
 
 type ManualMaterialPanelProps = {
@@ -1269,12 +1333,19 @@ type ManualMaterialPanelProps = {
   reviewRows: ReviewRow[];
   colMap: ColMap;
   manualMaterialMap: Map<string, string>;
+  noMaterialCount: number;
   onSetMaterial: (productNo: string, text: string) => void;
+  onDownloadManual: () => void;
+  onImportManual: (file: File) => void;
+  onClearManual: () => void;
 };
 
 function ManualMaterialPanel({
-  productNos, reviewRows, colMap, manualMaterialMap, onSetMaterial,
+  productNos, reviewRows, colMap, manualMaterialMap, noMaterialCount,
+  onSetMaterial, onDownloadManual, onImportManual, onClearManual,
 }: ManualMaterialPanelProps) {
+  const importRef = useRef<HTMLInputElement>(null);
+
   const productNameMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of reviewRows) {
@@ -1283,12 +1354,57 @@ function ManualMaterialPanel({
     return m;
   }, [reviewRows, colMap]);
 
+  const manualCount = useMemo(
+    () => [...manualMaterialMap.values()].filter((v) => v.trim()).length,
+    [manualMaterialMap],
+  );
+
   return (
     <div className={styles.manualMaterialPanel}>
-      <div className={styles.manualMaterialTitle}>素材未取得の手動補完</div>
+      <div className={styles.manualMaterialHeader}>
+        <span className={styles.manualMaterialTitle}>素材未取得の手動補完</span>
+        <span className={styles.manualMaterialCount}>
+          手動補完: {manualCount}件 / 素材未取得: {noMaterialCount}件
+        </span>
+      </div>
       <p className={styles.manualMaterialHint}>
         入力後、補完チェックの「素材未取得」から外れ、ccGoods.csv の独自コメント（3）に反映されます。
       </p>
+      <div className={styles.manualMaterialActions}>
+        <button
+          className={styles.manualMaterialBtn}
+          onClick={onDownloadManual}
+          disabled={manualCount === 0}
+          title="手動補完した素材をCSVで保存"
+        >
+          ⬇ 手動補完素材.csv
+        </button>
+        <button
+          className={styles.manualMaterialBtn}
+          onClick={() => importRef.current?.click()}
+          title="手動補完素材CSVを取込（既存に上書きマージ）"
+        >
+          ↑ 手動補完素材CSVを取込
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept=".csv"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) { onImportManual(file); e.target.value = ''; }
+          }}
+        />
+        <button
+          className={styles.manualMaterialClearBtn}
+          onClick={onClearManual}
+          disabled={manualCount === 0}
+          title="手動補完をすべてクリア"
+        >
+          手動補完をクリア
+        </button>
+      </div>
       <div className={styles.manualMaterialList}>
         {productNos.map((pno) => {
           const currentVal = manualMaterialMap.get(pno) ?? '';
@@ -1986,6 +2102,29 @@ export function ImportTab({ user }: ImportTabProps) {
     });
   }, []);
 
+  const handleDownloadManualMaterial = () =>
+    downloadCsv('手動補完素材.csv', generateManualMaterialCsv(manualMaterialMap, reviewRows, colMap));
+
+  const handleImportManualMaterial = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = parseManualMaterialCsv(text);
+      if (parsed.size === 0) return;
+      setManualMaterialMap((prev) => {
+        const next = new Map(prev);
+        for (const [k, v] of parsed) next.set(k, v);
+        return next;
+      });
+    } catch {
+      // silent — supplement is optional
+    }
+  };
+
+  const handleClearManualMaterial = () => {
+    if (!window.confirm('手動補完した素材をすべてクリアします。よろしいですか？')) return;
+    setManualMaterialMap(new Map());
+  };
+
   const handleFile = async (file: File) => {
     setParseLoading(true);
     setParseError(null);
@@ -2201,7 +2340,11 @@ export function ImportTab({ user }: ImportTabProps) {
               reviewRows={reviewRows}
               colMap={colMap}
               manualMaterialMap={manualMaterialMap}
+              noMaterialCount={supplementAlerts.noMaterial.length}
               onSetMaterial={handleSetManualMaterial}
+              onDownloadManual={handleDownloadManualMaterial}
+              onImportManual={handleImportManualMaterial}
+              onClearManual={handleClearManualMaterial}
             />
           )}
           <ReviewStep
