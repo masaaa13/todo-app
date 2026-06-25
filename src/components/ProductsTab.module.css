@@ -534,7 +534,26 @@
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--color-text-sub);
+  white-space: nowrap;
 }
+
+.csvExportBtn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.csvExportBtn:hover:not(:disabled) { background: #dbeafe; }
+.csvExportBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .sampleNotice {
   font-size: 0.74rem;

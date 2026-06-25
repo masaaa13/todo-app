@@ -183,17 +183,20 @@ function ActionPill({ action }: ActionPillProps) {
 
 type ProductTableProps = {
   products: MdProduct[];
+  totalCount: number;
   isReal: boolean;
   savedAt: string | null;
   onClearProducts: () => void;
 };
 
-function ProductTable({ products, isReal, savedAt, onClearProducts }: ProductTableProps) {
+function ProductTable({ products, totalCount, isReal, savedAt, onClearProducts }: ProductTableProps) {
   const noticeText = !isReal
     ? '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'
     : savedAt
     ? '商品登録CSVタブから反映・保存された商品データです。ブラウザ内に保存されています。'
     : '商品登録CSVタブから一時反映された商品データです。リロードすると消えます。';
+
+  const isFiltered = products.length !== totalCount;
 
   const handleClear = () => {
     if (window.confirm('保存された商品一覧データをクリアします。よろしいですか？')) {
@@ -201,12 +204,26 @@ function ProductTable({ products, isReal, savedAt, onClearProducts }: ProductTab
     }
   };
 
+  const csvTitle = isReal
+    ? '現在表示中の商品一覧をCSV出力します。'
+    : '商品登録CSVタブから商品一覧へ反映するとCSV出力できます。';
+
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
         <span className={styles.sectionCardNum}>3</span>
         商品一覧
-        <span className={styles.tableCount}>{products.length}件</span>
+        <span className={styles.tableCount}>
+          {isFiltered ? `表示中 ${products.length}件 / 全${totalCount}件` : `${products.length}件`}
+        </span>
+        <button
+          className={styles.csvExportBtn}
+          onClick={() => downloadMdProductsCsv(products)}
+          disabled={!isReal}
+          title={csvTitle}
+        >
+          ⬇ 商品一覧.csv
+        </button>
       </div>
       <p className={styles.sampleNotice} data-real={isReal || undefined}>
         {noticeText}
@@ -312,6 +329,41 @@ function NextPhaseCard() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+function csvEscape(v: string): string {
+  if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+    return '"' + v.replace(/"/g, '""') + '"';
+  }
+  return v;
+}
+
+function downloadMdProductsCsv(products: MdProduct[]): void {
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション';
+  const rows = products.map((p) => {
+    const cols = [
+      p.productNo,
+      p.productName,
+      p.category,
+      p.releaseDate ?? '',
+      p.skuCount != null ? String(p.skuCount) : '',
+      p.ecStock != null ? String(p.ecStock) : '準備中',
+      p.recentSales != null ? String(p.recentSales) : '準備中',
+      p.sellThroughRate != null ? String(p.sellThroughRate) : '準備中',
+      p.status,
+      p.nextAction,
+    ];
+    return cols.map(csvEscape).join(',');
+  });
+  const content = [header, ...rows].join('\r\n');
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mdProducts.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatSavedAt(iso: string): string {
   const d = new Date(iso);
   const y = d.getFullYear();
@@ -372,7 +424,13 @@ export function ProductsTab({ products = [], savedAt = null, onClearProducts }: 
         onCategory={setCategory}
         onStatus={setStatus}
       />
-      <ProductTable products={filtered} isReal={isReal} savedAt={savedAt} onClearProducts={onClearProducts ?? (() => {})} />
+      <ProductTable
+        products={filtered}
+        totalCount={activeData.length}
+        isReal={isReal}
+        savedAt={savedAt}
+        onClearProducts={onClearProducts ?? (() => {})}
+      />
       <NextPhaseCard />
     </div>
   );
