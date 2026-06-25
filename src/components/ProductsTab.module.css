@@ -382,3 +382,325 @@
   .stockGrid { grid-template-columns: 1fr; }
   .checkRow { flex-direction: column !important; align-items: flex-start; }
 }
+
+/* ── MD Product List UI ────────────────────────────────────────────────── */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Page header card */
+.pageHeaderCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pageHeaderTitle {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.pageHeaderDesc {
+  font-size: 0.82rem;
+  color: var(--color-text-sub);
+  margin-top: 2px;
+}
+
+.pageHeaderNote {
+  font-size: 0.74rem;
+  color: var(--color-text-sub);
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+/* Section card */
+.sectionCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionCardHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sectionCardNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: var(--color-accent);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* Summary pills */
+.summaryPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summaryPill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg);
+  min-width: 90px;
+  gap: 2px;
+}
+
+.summaryPillLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+  white-space: nowrap;
+}
+
+.summaryPillValue {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+}
+
+/* Filter bar */
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filterInput {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.83rem;
+  color: var(--color-text);
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  outline: none;
+  min-width: 180px;
+  flex: 1 1 180px;
+  transition: border-color 0.15s;
+}
+
+.filterInput:focus { border-color: var(--color-accent); }
+
+.filterSelect {
+  height: 34px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+  color: var(--color-text);
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.filterSelect:focus { border-color: var(--color-accent); }
+.filterSelect:disabled { opacity: 0.45; cursor: not-allowed; background: #f3f4f6; }
+
+/* Product table */
+.tableCount {
+  margin-left: auto;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+}
+
+.sampleNotice {
+  font-size: 0.74rem;
+  color: var(--color-text-sub);
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 800px;
+}
+
+.th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  border-bottom: 1.5px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.tr { border-bottom: 1px solid var(--color-border); }
+.tr:last-child { border-bottom: none; }
+.tr:hover { background: #f8f9fc; }
+
+.td {
+  padding: 10px 10px;
+  vertical-align: middle;
+}
+
+.emptyCell {
+  padding: 32px 10px;
+  text-align: center;
+  color: var(--color-text-sub);
+  font-size: 0.84rem;
+}
+
+.productNo {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.productName {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.categoryBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
+.dateCell {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.numCell {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.naCell {
+  font-size: 0.75rem;
+  color: var(--color-text-sub);
+  opacity: 0.6;
+}
+
+/* Status pill */
+.statusPill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.statusPill[data-variant='ok']      { background: #dcfce7; color: #16a34a; }
+.statusPill[data-variant='warn']    { background: #fffbeb; color: #d97706; }
+.statusPill[data-variant='neutral'] { background: #f3f4f6; color: #6b7280; }
+
+/* Action pill */
+.actionPill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.actionPill[data-variant='primary'] { background: #fef3c7; color: #92400e; }
+.actionPill[data-variant='warn']    { background: #fef9c3; color: #ca8a04; }
+.actionPill[data-variant='neutral'] { background: #f3f4f6; color: #374151; }
+
+/* Next phase card */
+.nextPhaseCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nextPhaseHeading {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+}
+
+.nextPhaseList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nextPhaseItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-sub);
+}
+
+.nextPhaseIcon {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .summaryPills { gap: 6px; }
+  .summaryPill { min-width: 78px; padding: 6px 10px; }
+  .filterBar { gap: 6px; }
+  .filterInput { min-width: 100%; }
+}

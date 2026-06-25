@@ -95,7 +95,7 @@ function App() {
         )}
 
         {/* ── EC tabs ── */}
-        {activeTab === 'products'  && <ProductsTab user={user} />}
+        {activeTab === 'products'  && <ProductsTab />}
         {activeTab === 'schedules' && <ScheduleTab user={user} />}
         {activeTab === 'inventory' && <InventoryTab user={user} />}
         {activeTab === 'import'    && <ImportTab user={user} />}

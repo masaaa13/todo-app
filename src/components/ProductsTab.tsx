@@ -1,381 +1,317 @@
-import { useState } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { useProducts } from '../hooks/useProducts';
-import { useReserveStock } from '../hooks/useReserveStock';
-import type { Product, ProductInput, ProductCategory, RegistrationStatus } from '../types/product';
-import {
-  PRODUCT_CATEGORIES, CATEGORY_LABELS,
-  REGISTRATION_STATUSES, REGISTRATION_STATUS_LABELS,
-} from '../types/product';
-import type { ReserveStockInput, StockType } from '../types/reserveStock';
-import { STOCK_TYPE_LABELS } from '../types/reserveStock';
+import { useState, useMemo } from 'react';
+import type { MdProduct } from '../types/md';
 import styles from './ProductsTab.module.css';
 
-// ── Form helpers ──────────────────────────────────────────────────────────
+// ── Dummy data ────────────────────────────────────────────────────────────
 
-type ProductFormState = {
-  sku: string; name: string; brand: string; category: ProductCategory;
-  launchDate: string; releaseDate: string; reservationStart: string; reservationEnd: string;
-  futureshopStatus: RegistrationStatus; zozoStatus: RegistrationStatus; notes: string;
-};
+const DUMMY_PRODUCTS: MdProduct[] = [
+  {
+    productNo: '1266610',
+    productName: 'SHOULDER PAD FLOWER TOPS',
+    category: 'TOPS',
+    releaseDate: '2026-09-02',
+    skuCount: 3,
+    ecStock: null,
+    recentSales: null,
+    sellThroughRate: null,
+    status: '素材補完済み',
+    nextAction: '商品確認',
+  },
+  {
+    productNo: '1266702',
+    productName: 'LACY PANTS',
+    category: 'PANTS',
+    releaseDate: '2026-09-09',
+    skuCount: 3,
+    ecStock: null,
+    recentSales: null,
+    sellThroughRate: null,
+    status: '素材補完済み',
+    nextAction: '商品確認',
+  },
+  {
+    productNo: '1266809',
+    productName: 'TWIN BUNNYS CHECK KNIT',
+    category: 'TOPS',
+    releaseDate: '2026-10-14',
+    skuCount: 3,
+    ecStock: null,
+    recentSales: null,
+    sellThroughRate: null,
+    status: '素材未取得',
+    nextAction: '素材補完',
+  },
+  {
+    productNo: '1266304',
+    productName: 'LINGERIE DENIM SKIRT PANTS',
+    category: 'PANTS',
+    releaseDate: '2026-08-13',
+    skuCount: 3,
+    ecStock: null,
+    recentSales: null,
+    sellThroughRate: null,
+    status: 'category確認済み',
+    nextAction: '商品確認',
+  },
+];
 
-const EMPTY_PRODUCT: ProductFormState = {
-  sku: '', name: '', brand: '', category: 'normal',
-  launchDate: '', releaseDate: '', reservationStart: '', reservationEnd: '',
-  futureshopStatus: 'pending', zozoStatus: 'pending', notes: '',
-};
-
-function formToInput(f: ProductFormState): ProductInput {
-  return {
-    sku: f.sku.trim(), name: f.name.trim(),
-    brand: f.brand.trim() || null, category: f.category,
-    launchDate: f.launchDate || null, releaseDate: f.releaseDate || null,
-    reservationStart: f.reservationStart || null, reservationEnd: f.reservationEnd || null,
-    futureshopStatus: f.futureshopStatus, zozoStatus: f.zozoStatus,
-    notes: f.notes.trim() || null,
-  };
-}
-
-function productToForm(p: Product): ProductFormState {
-  return {
-    sku: p.sku, name: p.name, brand: p.brand ?? '', category: p.category,
-    launchDate: p.launchDate ?? '', releaseDate: p.releaseDate ?? '',
-    reservationStart: p.reservationStart ?? '', reservationEnd: p.reservationEnd ?? '',
-    futureshopStatus: p.futureshopStatus, zozoStatus: p.zozoStatus, notes: p.notes ?? '',
-  };
-}
-
-type StockFormState = {
-  stockType: StockType; quantity: string; deliveryDate: string;
-  futureshopRequired: boolean; futureshopPlannedDate: string;
-  futureshopCompletedDate: string; switchPending: boolean; notes: string;
-};
-
-const EMPTY_STOCK: StockFormState = {
-  stockType: 'additional', quantity: '', deliveryDate: '',
-  futureshopRequired: false, futureshopPlannedDate: '',
-  futureshopCompletedDate: '', switchPending: false, notes: '',
-};
+const ALL_CATEGORIES = Array.from(new Set(DUMMY_PRODUCTS.map((p) => p.category)));
+const ALL_STATUSES = Array.from(new Set(DUMMY_PRODUCTS.map((p) => p.status)));
 
 // ── Sub-components ────────────────────────────────────────────────────────
 
-type ProductFormProps = {
-  initial: ProductFormState;
-  onSubmit: (input: ProductInput) => void;
-  onCancel: () => void;
-  submitLabel: string;
-};
-
-function ProductForm({ initial, onSubmit, onCancel, submitLabel }: ProductFormProps) {
-  const [f, setF] = useState<ProductFormState>(initial);
-  const set = <K extends keyof ProductFormState>(k: K, v: ProductFormState[K]) =>
-    setF((prev) => ({ ...prev, [k]: v }));
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!f.sku.trim() || !f.name.trim()) return;
-    onSubmit(formToInput(f));
-  };
-
+function PageHeaderCard() {
   return (
-    <form className={styles.form} onSubmit={handleSubmit}>
-      <div className={styles.formGrid}>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>品番 *</label>
-          <input className={styles.input} value={f.sku} onChange={(e) => set('sku', e.target.value)} placeholder="SKU-001" required />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>商品名 *</label>
-          <input className={styles.input} value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="商品名を入力" required />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>ブランド</label>
-          <input className={styles.input} value={f.brand} onChange={(e) => set('brand', e.target.value)} placeholder="ブランド名" />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>商品区分</label>
-          <select className={styles.select} value={f.category} onChange={(e) => set('category', e.target.value as ProductCategory)}>
-            {PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
-          </select>
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>公開日</label>
-          <input className={styles.input} type="date" value={f.launchDate} onChange={(e) => set('launchDate', e.target.value)} />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>発売日</label>
-          <input className={styles.input} type="date" value={f.releaseDate} onChange={(e) => set('releaseDate', e.target.value)} />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>予約開始日</label>
-          <input className={styles.input} type="date" value={f.reservationStart} onChange={(e) => set('reservationStart', e.target.value)} />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>予約終了日</label>
-          <input className={styles.input} type="date" value={f.reservationEnd} onChange={(e) => set('reservationEnd', e.target.value)} />
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>futureshop</label>
-          <select className={styles.select} value={f.futureshopStatus} onChange={(e) => set('futureshopStatus', e.target.value as RegistrationStatus)}>
-            {REGISTRATION_STATUSES.map((s) => <option key={s} value={s}>{REGISTRATION_STATUS_LABELS[s]}</option>)}
-          </select>
-        </div>
-        <div className={styles.formField}>
-          <label className={styles.fieldLabel}>ZOZO</label>
-          <select className={styles.select} value={f.zozoStatus} onChange={(e) => set('zozoStatus', e.target.value as RegistrationStatus)}>
-            {REGISTRATION_STATUSES.map((s) => <option key={s} value={s}>{REGISTRATION_STATUS_LABELS[s]}</option>)}
-          </select>
-        </div>
-        <div className={`${styles.formField} ${styles.fullWidth}`}>
-          <label className={styles.fieldLabel}>メモ</label>
-          <textarea className={styles.textarea} value={f.notes} onChange={(e) => set('notes', e.target.value)} rows={2} placeholder="備考・メモ" />
-        </div>
+    <div className={styles.pageHeaderCard}>
+      <div className={styles.pageHeaderTitle}>商品一覧</div>
+      <div className={styles.pageHeaderDesc}>
+        商品登録CSV・在庫・受注データをもとに、MD判断に使う商品情報を一覧化します。
       </div>
-      <div className={styles.formActions}>
-        <button type="submit" className={styles.submitBtn} disabled={!f.sku.trim() || !f.name.trim()}>
-          {submitLabel}
-        </button>
-        <button type="button" className={styles.cancelBtn} onClick={onCancel}>キャンセル</button>
+      <div className={styles.pageHeaderNote}>
+        現在はMDツール化に向けた入口画面です。商品データ保存・API連携は次フェーズで実装予定です。
       </div>
-    </form>
+    </div>
   );
 }
 
-type StockSectionProps = {
-  product: Product;
-  stocks: ReturnType<typeof useReserveStock>['stocks'];
-  onAdd: (input: ReserveStockInput) => void;
-  onUpdate: (id: string, input: Partial<ReserveStockInput>) => void;
-  onDelete: (id: string) => void;
-};
-
-function ReserveStockSection({ product, stocks, onAdd, onUpdate, onDelete }: StockSectionProps) {
-  const myStocks = stocks.filter((s) => s.productId === product.id);
-  const [showForm, setShowForm] = useState(false);
-  const [f, setF] = useState<StockFormState>(EMPTY_STOCK);
-  const set = <K extends keyof StockFormState>(k: K, v: StockFormState[K]) =>
-    setF((prev) => ({ ...prev, [k]: v }));
-
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    onAdd({
-      productId: product.id,
-      stockType: f.stockType,
-      quantity: f.quantity ? Number(f.quantity) : null,
-      deliveryDate: f.deliveryDate || null,
-      futureshopRequired: f.futureshopRequired,
-      futureshopPlannedDate: f.futureshopPlannedDate || null,
-      futureshopCompletedDate: f.futureshopCompletedDate || null,
-      switchPending: f.switchPending,
-      notes: f.notes.trim() || null,
-    });
-    setF(EMPTY_STOCK);
-    setShowForm(false);
-  };
+function MdSummaryCard() {
+  const summaryItems = [
+    { label: '登録商品数', value: '準備中' },
+    { label: 'SKU数', value: '準備中' },
+    { label: '在庫あり', value: '準備中' },
+    { label: '売れ筋候補', value: '準備中' },
+    { label: '死に筋候補', value: '準備中' },
+    { label: '欲しいもの候補', value: '準備中' },
+  ];
 
   return (
-    <div className={styles.stockSection}>
-      <div className={styles.stockHeader}>
-        <span className={styles.stockTitle}>在庫管理</span>
-        <button className={styles.addSmallBtn} onClick={() => setShowForm((v) => !v)}>
-          {showForm ? 'キャンセル' : '+ 追加'}
-        </button>
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>1</span>
+        MDサマリー
       </div>
-
-      {showForm && (
-        <form className={styles.stockForm} onSubmit={handleAdd}>
-          <div className={styles.stockGrid}>
-            <div className={styles.formField}>
-              <label className={styles.fieldLabel}>在庫区分</label>
-              <select className={styles.select} value={f.stockType} onChange={(e) => set('stockType', e.target.value as StockType)}>
-                {(['initial', 'additional'] as StockType[]).map((t) => (
-                  <option key={t} value={t}>{STOCK_TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.formField}>
-              <label className={styles.fieldLabel}>数量</label>
-              <input className={styles.input} type="number" min="0" value={f.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="100" />
-            </div>
-            <div className={styles.formField}>
-              <label className={styles.fieldLabel}>納期</label>
-              <input className={styles.input} type="date" value={f.deliveryDate} onChange={(e) => set('deliveryDate', e.target.value)} />
-            </div>
-            <div className={styles.formField}>
-              <label className={styles.fieldLabel}>futureshop反映予定日</label>
-              <input className={styles.input} type="date" value={f.futureshopPlannedDate} onChange={(e) => set('futureshopPlannedDate', e.target.value)} disabled={!f.futureshopRequired} />
-            </div>
-            <div className={styles.formField}>
-              <label className={styles.fieldLabel}>futureshop反映完了日</label>
-              <input className={styles.input} type="date" value={f.futureshopCompletedDate} onChange={(e) => set('futureshopCompletedDate', e.target.value)} disabled={!f.futureshopRequired} />
-            </div>
-            <div className={`${styles.formField} ${styles.checkRow}`}>
-              <label className={styles.checkLabel}>
-                <input type="checkbox" checked={f.futureshopRequired} onChange={(e) => set('futureshopRequired', e.target.checked)} />
-                futureshop反映必要
-              </label>
-              <label className={styles.checkLabel}>
-                <input type="checkbox" checked={f.switchPending} onChange={(e) => set('switchPending', e.target.checked)} />
-                切替待ち
-              </label>
-            </div>
-            <div className={`${styles.formField} ${styles.fullWidth}`}>
-              <label className={styles.fieldLabel}>メモ</label>
-              <input className={styles.input} value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="備考" />
-            </div>
+      <div className={styles.summaryPills}>
+        {summaryItems.map(({ label, value }) => (
+          <div key={label} className={styles.summaryPill}>
+            <span className={styles.summaryPillLabel}>{label}</span>
+            <span className={styles.summaryPillValue}>{value}</span>
           </div>
-          <button type="submit" className={styles.submitBtn} style={{ marginTop: 8 }}>追加</button>
-        </form>
-      )}
+        ))}
+      </div>
+    </div>
+  );
+}
 
-      {myStocks.length === 0 && !showForm && (
-        <p className={styles.emptySmall}>在庫データなし</p>
-      )}
+type FilterBarProps = {
+  keyword: string;
+  category: string;
+  status: string;
+  onKeyword: (v: string) => void;
+  onCategory: (v: string) => void;
+  onStatus: (v: string) => void;
+};
 
-      {myStocks.map((s) => (
-        <div key={s.id} className={styles.stockRow} data-switch={s.switchPending || undefined}>
-          <div className={styles.stockInfo}>
-            <span className={styles.stockTypeBadge} data-type={s.stockType}>
-              {STOCK_TYPE_LABELS[s.stockType]}
-            </span>
-            {s.quantity != null && <span className={styles.stockQty}>{s.quantity}個</span>}
-            {s.deliveryDate && <span className={styles.stockDate}>納期: {s.deliveryDate}</span>}
-            {s.futureshopRequired && !s.futureshopCompletedDate && (
-              <span className={styles.futureBadge}>futureshop要</span>
+function FilterBar({ keyword, category, status, onKeyword, onCategory, onStatus }: FilterBarProps) {
+  return (
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>2</span>
+        フィルター / 検索
+      </div>
+      <div className={styles.filterBar}>
+        <input
+          className={styles.filterInput}
+          type="search"
+          placeholder="品番・商品名で検索"
+          value={keyword}
+          onChange={(e) => onKeyword(e.target.value)}
+        />
+        <select className={styles.filterSelect} value={category} onChange={(e) => onCategory(e.target.value)}>
+          <option value="">カテゴリ: 全て</option>
+          {ALL_CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select className={styles.filterSelect} value={status} onChange={(e) => onStatus(e.target.value)}>
+          <option value="">ステータス: 全て</option>
+          {ALL_STATUSES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select className={styles.filterSelect} disabled>
+          <option>コラボ/通常: 全て（次フェーズ）</option>
+        </select>
+        <select className={styles.filterSelect} disabled>
+          <option>発売月: 全て（次フェーズ）</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
+type StatusPillProps = { status: string };
+
+function StatusPill({ status }: StatusPillProps) {
+  const dataAttr =
+    status === '素材補完済み' || status === 'category確認済み'
+      ? 'ok'
+      : status === '素材未取得'
+      ? 'warn'
+      : 'neutral';
+
+  return (
+    <span className={styles.statusPill} data-variant={dataAttr}>
+      {status}
+    </span>
+  );
+}
+
+type ActionPillProps = { action: string };
+
+function ActionPill({ action }: ActionPillProps) {
+  const dataAttr =
+    action === '素材補完' ? 'warn' : action === 'CSV出力' ? 'primary' : 'neutral';
+
+  return (
+    <span className={styles.actionPill} data-variant={dataAttr}>
+      {action}
+    </span>
+  );
+}
+
+type ProductTableProps = { products: MdProduct[] };
+
+function ProductTable({ products }: ProductTableProps) {
+  return (
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>3</span>
+        商品一覧
+        <span className={styles.tableCount}>{products.length}件</span>
+      </div>
+      <p className={styles.sampleNotice}>
+        現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。
+      </p>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.th}>品番</th>
+              <th className={styles.th}>商品名</th>
+              <th className={styles.th}>カテゴリ</th>
+              <th className={styles.th}>発売日</th>
+              <th className={styles.th}>SKU数</th>
+              <th className={styles.th}>EC在庫</th>
+              <th className={styles.th}>直近売上</th>
+              <th className={styles.th}>消化率</th>
+              <th className={styles.th}>ステータス</th>
+              <th className={styles.th}>次アクション</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.length === 0 ? (
+              <tr>
+                <td className={styles.emptyCell} colSpan={10}>該当する商品がありません</td>
+              </tr>
+            ) : (
+              products.map((p) => (
+                <tr key={p.productNo} className={styles.tr}>
+                  <td className={styles.td}>
+                    <span className={styles.productNo}>{p.productNo}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.productName}>{p.productName}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.categoryBadge}>{p.category}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.numCell}>{p.skuCount ?? '—'}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.naCell}>準備中</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.naCell}>準備中</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.naCell}>準備中</span>
+                  </td>
+                  <td className={styles.td}>
+                    <StatusPill status={p.status} />
+                  </td>
+                  <td className={styles.td}>
+                    <ActionPill action={p.nextAction} />
+                  </td>
+                </tr>
+              ))
             )}
-            {s.futureshopCompletedDate && (
-              <span className={styles.futureDone}>futureshop完了</span>
-            )}
-            {s.switchPending && <span className={styles.switchBadge}>切替待ち</span>}
-            {s.futureshopPlannedDate && !s.futureshopCompletedDate && (
-              <span className={styles.stockDate}>反映予定: {s.futureshopPlannedDate}</span>
-            )}
-          </div>
-          <div className={styles.stockActions}>
-            {s.futureshopRequired && !s.futureshopCompletedDate && (
-              <button
-                className={styles.doneSmallBtn}
-                onClick={() => onUpdate(s.id, { futureshopCompletedDate: new Date().toISOString().slice(0, 10), switchPending: false })}
-              >
-                反映完了
-              </button>
-            )}
-            <button className={styles.deleteSmallBtn} onClick={() => onDelete(s.id)}>削除</button>
-          </div>
-        </div>
-      ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function NextPhaseCard() {
+  const items = [
+    '商品登録CSVタブから商品データを保存',
+    'futureshop APIから在庫・受注を取得',
+    'SKU別売上・在庫を蓄積',
+    '売れ筋/死に筋を自動判定',
+    '欲しいものリストを自動生成',
+    '店舗共有用CSV/xlsxを出力',
+  ];
+
+  return (
+    <div className={styles.nextPhaseCard}>
+      <div className={styles.nextPhaseHeading}>次フェーズで追加予定</div>
+      <ul className={styles.nextPhaseList}>
+        {items.map((item) => (
+          <li key={item} className={styles.nextPhaseItem}>
+            <span className={styles.nextPhaseIcon}>→</span>
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 // ── Main component ────────────────────────────────────────────────────────
 
-type ProductsTabProps = { user: User | null };
+export function ProductsTab() {
+  const [keyword, setKeyword] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState('');
 
-export function ProductsTab({ user }: ProductsTabProps) {
-  const { products, addProduct, updateProduct, deleteProduct } = useProducts(user);
-  const stockStore = useReserveStock(user);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const handleAdd = (input: ProductInput) => {
-    addProduct(input);
-    setShowAddForm(false);
-  };
-
-  const handleEdit = (input: ProductInput) => {
-    if (!editingProduct) return;
-    updateProduct(editingProduct.id, input);
-    setEditingProduct(null);
-  };
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return DUMMY_PRODUCTS.filter((p) => {
+      if (kw && !p.productNo.toLowerCase().includes(kw) && !p.productName.toLowerCase().includes(kw)) return false;
+      if (category && p.category !== category) return false;
+      if (status && p.status !== status) return false;
+      return true;
+    });
+  }, [keyword, category, status]);
 
   return (
-    <div>
-      <div className={styles.toolbar}>
-        <span className={styles.sectionTitle}>商品一覧 <span className={styles.count}>{products.length}</span></span>
-        <button className={styles.addBtn} onClick={() => { setShowAddForm((v) => !v); setEditingProduct(null); }}>
-          {showAddForm ? 'キャンセル' : '+ 商品を追加'}
-        </button>
-      </div>
-
-      {showAddForm && !editingProduct && (
-        <ProductForm
-          initial={EMPTY_PRODUCT}
-          onSubmit={handleAdd}
-          onCancel={() => setShowAddForm(false)}
-          submitLabel="追加"
-        />
-      )}
-
-      {products.length === 0 && !showAddForm && (
-        <div className={styles.empty}>商品が登録されていません</div>
-      )}
-
-      <ul className={styles.list}>
-        {products.map((p) => (
-          <li key={p.id} className={styles.productCard}>
-            {editingProduct?.id === p.id ? (
-              <ProductForm
-                initial={productToForm(p)}
-                onSubmit={handleEdit}
-                onCancel={() => setEditingProduct(null)}
-                submitLabel="保存"
-              />
-            ) : (
-              <>
-                <div className={styles.productHeader}>
-                  <div className={styles.productMain}>
-                    <span className={styles.sku}>{p.sku}</span>
-                    <span className={styles.productName}>{p.name}</span>
-                    <span className={styles.categoryBadge} data-category={p.category}>
-                      {CATEGORY_LABELS[p.category]}
-                    </span>
-                  </div>
-                  <div className={styles.productActions}>
-                    <button
-                      className={styles.expandBtn}
-                      data-active={expandedId === p.id || undefined}
-                      onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                      aria-label="在庫管理"
-                    >
-                      在庫
-                    </button>
-                    <button className={styles.editSmallBtn} onClick={() => { setEditingProduct(p); setShowAddForm(false); }}>編集</button>
-                    <button className={styles.deleteSmallBtn} onClick={() => deleteProduct(p.id)}>削除</button>
-                  </div>
-                </div>
-
-                <div className={styles.productMeta}>
-                  {p.brand && <span className={styles.metaItem}>{p.brand}</span>}
-                  {p.releaseDate && <span className={styles.metaItem}>発売: {p.releaseDate}</span>}
-                  {p.launchDate && <span className={styles.metaItem}>公開: {p.launchDate}</span>}
-                  {p.reservationStart && <span className={styles.metaItem}>予約開始: {p.reservationStart}</span>}
-                  {p.reservationEnd && <span className={styles.metaItem}>予約終了: {p.reservationEnd}</span>}
-                  <span className={styles.regBadge} data-status={p.futureshopStatus}>
-                    FS: {REGISTRATION_STATUS_LABELS[p.futureshopStatus]}
-                  </span>
-                  <span className={styles.regBadge} data-status={p.zozoStatus}>
-                    ZOZO: {REGISTRATION_STATUS_LABELS[p.zozoStatus]}
-                  </span>
-                </div>
-
-                {p.notes && <p className={styles.productNotes}>{p.notes}</p>}
-
-                {expandedId === p.id && (
-                  <ReserveStockSection
-                    product={p}
-                    stocks={stockStore.stocks}
-                    onAdd={stockStore.addStock}
-                    onUpdate={stockStore.updateStock}
-                    onDelete={stockStore.deleteStock}
-                  />
-                )}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+    <div className={styles.root}>
+      <PageHeaderCard />
+      <MdSummaryCard />
+      <FilterBar
+        keyword={keyword}
+        category={category}
+        status={status}
+        onKeyword={setKeyword}
+        onCategory={setCategory}
+        onStatus={setStatus}
+      />
+      <ProductTable products={filtered} />
+      <NextPhaseCard />
     </div>
   );
 }
