@@ -467,6 +467,8 @@ const PRODUCT_CATEGORY_OVERRIDES: Record<string, {
   '1266104': { mainGroup: 'JACKET-OUTER', subGroups: ['JACKET-OUTER/JACKET'] },
   // 1266931: "KNIT FLIGHT CAP" → KNITキーワードがCAPより先勝ちするため上書き
   '1266931': { mainGroup: 'HAT', subGroups: [] },
+  // 1266304: "SKIRT PANTS" → SKIRTが先勝ちするが導線はPANTSが適切
+  '1266304': { mainGroup: 'PANTS', subGroups: ['PANTS/PANTS'] },
 };
 
 // ccGoods F列「メイングループ」を推定する。品番上書き → コラボ → 商品名推定の順。
