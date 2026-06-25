@@ -763,10 +763,6 @@ function formatSaleStartDate(value: unknown): string {
 // Parse MD xlsx to extract Map<productNo(7-digit), saleStartDate(YYYYMMDD12:00)>
 // Scans all sheets; identifies the STORE 発売日 column by header keywords.
 // Normalize "5/2週～" or "3/6週～4/1週" → "5/2週"
-function normalizeWeekLabel(label: string): string {
-  const m = label.trim().match(/^(\d+\/\d+週)/);
-  return m ? m[1] : label.trim();
-}
 
 // Parse MD xlsx → ReleaseDateParseResult
 // Builds weekDateMap (week-label → date) and productDateMap (productNo → date, when MD has 7-digit nos).
@@ -787,22 +783,30 @@ async function parseReleaseDateFile(buffer: ArrayBuffer): Promise<ReleaseDatePar
     if (raw.length < 2) continue;
 
     // Phase 1: Build weekDateMap from week-block structure
-    //   col0: "5/2週"      col1: "発売日"
-    //   col0: "(5/4～5/10)" col1: "SHOP:5/8(金)"
-    //   col0: ""            col1: "STORE:5/6(水)"  ← target
-    let currentWeekLabel = '';
+    //   col0: "5/2週"           col1: "発売日"
+    //   col0: "(5/4～5/10)"     col1: "SHOP:5/8(金)"
+    //   col0: ""                 col1: "STORE:5/6(水)"   ← target
+    //   col0: "8/6週～9/1週"   col1: "発売日"            ← combined range: register all weeks
+    let currentWeekLabels: string[] = [];
     for (const rawRow of raw) {
       const col0 = String(rawRow[0] ?? '').trim();
       const col1 = String(rawRow[1] ?? '').trim();
       if (/\d+\/\d+週/.test(col0)) {
-        currentWeekLabel = normalizeWeekLabel(col0);
-        if (!detectedWeekLabels.includes(currentWeekLabel)) detectedWeekLabels.push(currentWeekLabel);
+        const allWeeks = col0.match(/\d+\/\d+週/g) ?? [];
+        currentWeekLabels = allWeeks;
+        for (const wl of allWeeks) {
+          if (!detectedWeekLabels.includes(wl)) detectedWeekLabels.push(wl);
+        }
       }
-      if (currentWeekLabel && /^STORE:/i.test(col1)) {
+      if (currentWeekLabels.length > 0 && /^STORE:/i.test(col1)) {
         const dateRaw = col1.replace(/^STORE:/i, '').replace(/\(.+?\)/, '').trim();
         const formatted = formatSaleStartDate(dateRaw);
-        if (formatted && !weekDateMap.has(currentWeekLabel)) weekDateMap.set(currentWeekLabel, formatted);
-        currentWeekLabel = '';
+        if (formatted) {
+          for (const wl of currentWeekLabels) {
+            if (!weekDateMap.has(wl)) weekDateMap.set(wl, formatted);
+          }
+        }
+        currentWeekLabels = [];
       }
     }
 
@@ -1149,8 +1153,8 @@ function computeSupplementAlerts(
   let releaseDateSkipReason = '';
   if (!releaseDateParseResult) {
     releaseDateSkipReason = 'MD表が未投入です';
-  } else if (!releaseDateParseResult.hasProductNos) {
-    releaseDateSkipReason = 'MD表に商品番号が存在しないため、週ラベル推定による自動反映を停止しています';
+  } else if (!releaseDateParseResult.hasProductNos && releaseDateMap.size === 0) {
+    releaseDateSkipReason = 'MD表に商品番号なし・SKU納期列との紐づきなし → 自動反映停止';
   }
   const seen = new Set<string>();
   const products: string[] = [];
@@ -1820,8 +1824,8 @@ export function ImportTab({ user }: ImportTabProps) {
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
 
   // Build releaseDateMap: productNo → saleStartDate
-  // Only populated from productDateMap (when MD has 7-digit nos).
-  // Week-label-only inference is suppressed (unsafe — no product-level guarantee).
+  // Phase 1: productDateMap when MD has 7-digit product nos (direct lookup).
+  // Phase 2: when MD has only week labels, cross-reference via SKU '納期' column.
   const releaseDateMap = useMemo<Map<string, string>>(() => {
     if (!releaseDateParseResult) return new Map();
     const { productDateMap, weekDateMap, hasProductNos, sheetNames, detectedProductNos, detectedWeekLabels } = releaseDateParseResult;
@@ -1829,14 +1833,29 @@ export function ImportTab({ user }: ImportTabProps) {
     console.log('[MD解析] 週ラベル数:', detectedWeekLabels.length, detectedWeekLabels);
     console.log('[MD解析] 7桁品番数:', detectedProductNos.length, detectedProductNos.slice(0, 10));
     console.log('[MD解析] hasProductNos:', hasProductNos);
-    if (!hasProductNos) {
-      console.log('[販売期間From] MD表に品番なし → 自動入力停止（週ラベル推定も停止）');
-      console.log('[販売期間From] weekDateMap keys:', [...weekDateMap.keys()]);
+    if (hasProductNos) {
+      console.log('[販売期間From] productDateMap:', [...productDateMap.entries()]);
+      return productDateMap;
+    }
+    // No product numbers in MD — try cross-reference via SKU '納期' column
+    if (weekDateMap.size === 0 || reviewRows.length === 0) {
+      console.log('[販売期間From] MD表に品番なし・週マップ空 → 自動入力停止');
       return new Map();
     }
-    console.log('[販売期間From] productDateMap:', [...productDateMap.entries()]);
-    return productDateMap;
-  }, [releaseDateParseResult]);
+    const crossMap = new Map<string, string>();
+    const seenPno = new Set<string>();
+    for (const r of reviewRows) {
+      const productNo = r.productNo.trim();
+      if (!productNo || seenPno.has(productNo) || isExcludedProductNo(productNo)) continue;
+      seenPno.add(productNo);
+      const weekLabel = (r.rawData['納期'] ?? '').trim();
+      if (!weekLabel) continue;
+      const date = weekDateMap.get(weekLabel);
+      if (date) crossMap.set(productNo, date);
+    }
+    console.log(`[販売期間From] SKU×MD cross-ref: ${crossMap.size}件マッチ`, [...crossMap.entries()]);
+    return crossMap;
+  }, [releaseDateParseResult, reviewRows]);
 
   const supplementAlerts = useMemo(
     () => computeSupplementAlerts(reviewRows, colMap, captionMap, specMap, materialMap, releaseDateMap, releaseDateParseResult),
