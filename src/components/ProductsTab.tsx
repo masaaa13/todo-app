@@ -55,9 +55,6 @@ const DUMMY_PRODUCTS: MdProduct[] = [
   },
 ];
 
-const ALL_CATEGORIES = Array.from(new Set(DUMMY_PRODUCTS.map((p) => p.category)));
-const ALL_STATUSES = Array.from(new Set(DUMMY_PRODUCTS.map((p) => p.status)));
-
 // ── Sub-components ────────────────────────────────────────────────────────
 
 function PageHeaderCard() {
@@ -74,10 +71,13 @@ function PageHeaderCard() {
   );
 }
 
-function MdSummaryCard() {
+type MdSummaryCardProps = { products: MdProduct[]; isReal: boolean };
+
+function MdSummaryCard({ products, isReal }: MdSummaryCardProps) {
+  const totalSku = products.reduce((s, p) => s + (p.skuCount ?? 0), 0);
   const summaryItems = [
-    { label: '登録商品数', value: '準備中' },
-    { label: 'SKU数', value: '準備中' },
+    { label: '登録商品数', value: isReal ? String(products.length) : '準備中' },
+    { label: 'SKU数', value: isReal ? String(totalSku) : '準備中' },
     { label: '在庫あり', value: '準備中' },
     { label: '売れ筋候補', value: '準備中' },
     { label: '死に筋候補', value: '準備中' },
@@ -106,12 +106,14 @@ type FilterBarProps = {
   keyword: string;
   category: string;
   status: string;
+  categories: string[];
+  statuses: string[];
   onKeyword: (v: string) => void;
   onCategory: (v: string) => void;
   onStatus: (v: string) => void;
 };
 
-function FilterBar({ keyword, category, status, onKeyword, onCategory, onStatus }: FilterBarProps) {
+function FilterBar({ keyword, category, status, categories, statuses, onKeyword, onCategory, onStatus }: FilterBarProps) {
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
@@ -128,13 +130,13 @@ function FilterBar({ keyword, category, status, onKeyword, onCategory, onStatus 
         />
         <select className={styles.filterSelect} value={category} onChange={(e) => onCategory(e.target.value)}>
           <option value="">カテゴリ: 全て</option>
-          {ALL_CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
         <select className={styles.filterSelect} value={status} onChange={(e) => onStatus(e.target.value)}>
           <option value="">ステータス: 全て</option>
-          {ALL_STATUSES.map((s) => (
+          {statuses.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -153,9 +155,9 @@ type StatusPillProps = { status: string };
 
 function StatusPill({ status }: StatusPillProps) {
   const dataAttr =
-    status === '素材補完済み' || status === 'category確認済み'
+    status === '素材補完済み' || status === 'category確認済み' || status === '登録準備OK'
       ? 'ok'
-      : status === '素材未取得'
+      : status === '素材未取得' || status === '補完未取得'
       ? 'warn'
       : 'neutral';
 
@@ -179,9 +181,9 @@ function ActionPill({ action }: ActionPillProps) {
   );
 }
 
-type ProductTableProps = { products: MdProduct[] };
+type ProductTableProps = { products: MdProduct[]; isReal: boolean };
 
-function ProductTable({ products }: ProductTableProps) {
+function ProductTable({ products, isReal }: ProductTableProps) {
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
@@ -189,8 +191,10 @@ function ProductTable({ products }: ProductTableProps) {
         商品一覧
         <span className={styles.tableCount}>{products.length}件</span>
       </div>
-      <p className={styles.sampleNotice}>
-        現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。
+      <p className={styles.sampleNotice} data-real={isReal || undefined}>
+        {isReal
+          ? '商品登録CSVタブから一時反映された商品データです。リロードすると消えます。'
+          : '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'}
       </p>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -283,34 +287,51 @@ function NextPhaseCard() {
 
 // ── Main component ────────────────────────────────────────────────────────
 
-export function ProductsTab() {
+type ProductsTabProps = { products?: MdProduct[] };
+
+export function ProductsTab({ products = [] }: ProductsTabProps) {
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
 
+  const isReal = products.length > 0;
+  const activeData = isReal ? products : DUMMY_PRODUCTS;
+
+  const categories = useMemo(
+    () => Array.from(new Set(activeData.map((p) => p.category))).filter(Boolean),
+    [activeData],
+  );
+
+  const statuses = useMemo(
+    () => Array.from(new Set(activeData.map((p) => p.status))).filter(Boolean),
+    [activeData],
+  );
+
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return DUMMY_PRODUCTS.filter((p) => {
+    return activeData.filter((p) => {
       if (kw && !p.productNo.toLowerCase().includes(kw) && !p.productName.toLowerCase().includes(kw)) return false;
       if (category && p.category !== category) return false;
       if (status && p.status !== status) return false;
       return true;
     });
-  }, [keyword, category, status]);
+  }, [activeData, keyword, category, status]);
 
   return (
     <div className={styles.root}>
       <PageHeaderCard />
-      <MdSummaryCard />
+      <MdSummaryCard products={activeData} isReal={isReal} />
       <FilterBar
         keyword={keyword}
         category={category}
         status={status}
+        categories={categories}
+        statuses={statuses}
         onKeyword={setKeyword}
         onCategory={setCategory}
         onStatus={setStatus}
       />
-      <ProductTable products={filtered} />
+      <ProductTable products={filtered} isReal={isReal} />
       <NextPhaseCard />
     </div>
   );

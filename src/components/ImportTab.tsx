@@ -5,6 +5,7 @@ import Encoding from 'encoding-japanese';
 import { useFsProducts } from '../hooks/useFsProducts';
 import type { ImportRowStatus } from '../types/importJob';
 import { IMPORT_ROW_STATUS_LABELS } from '../types/importJob';
+import type { MdProduct } from '../types/md';
 import styles from './ImportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1317,17 +1318,19 @@ type CsvOutputCardProps = {
   selectedCount: number;
   manualCount: number;
   hasMissingSupplements: boolean;
+  sentCount: number;
   onDownloadCcGoods: () => void;
   onDownloadVariation: () => void;
   onDownloadCategory: () => void;
   onDownloadMissingSupplements: () => void;
   onDownloadManualMaterial: () => void;
+  onSendToProducts: () => void;
 };
 
 function CsvOutputCard({
-  hasValidRows, selectedCount, manualCount, hasMissingSupplements,
+  hasValidRows, selectedCount, manualCount, hasMissingSupplements, sentCount,
   onDownloadCcGoods, onDownloadVariation, onDownloadCategory,
-  onDownloadMissingSupplements, onDownloadManualMaterial,
+  onDownloadMissingSupplements, onDownloadManualMaterial, onSendToProducts,
 }: CsvOutputCardProps) {
   return (
     <div className={styles.sectionCard}>
@@ -1381,6 +1384,24 @@ function CsvOutputCard({
         >
           ⬇ 手動補完素材.csv
         </button>
+      </div>
+      <div className={styles.sendToProductsRow}>
+        <button
+          className={styles.sendToProductsBtn}
+          onClick={onSendToProducts}
+          disabled={!hasValidRows}
+          title="取り込み商品を商品一覧タブへ一時反映します"
+        >
+          商品一覧へ反映
+        </button>
+        <span className={styles.sendToProductsDesc}>
+          現在取り込んでいる商品を、商品一覧タブへ一時反映します。リロードすると消えます。
+        </span>
+        {sentCount > 0 && (
+          <span className={styles.sendToProductsDone}>
+            ✓ 商品一覧へ{sentCount}件反映しました。
+          </span>
+        )}
       </div>
     </div>
   );
@@ -2079,9 +2100,83 @@ function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadV
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-type ImportTabProps = { user: User | null };
+// ── MdProduct conversion ──────────────────────────────────────────────────────
 
-export function ImportTab({ user }: ImportTabProps) {
+function reviewRowsToMdProducts(
+  rows: ReviewRow[],
+  colMap: ColMap,
+  releaseDateMap: Map<string, string>,
+  supplementAlerts: SupplementAlerts,
+): MdProduct[] {
+  const noMaterialSet = new Set(supplementAlerts.noMaterial);
+  const noCaptionSet = new Set(supplementAlerts.noCaption);
+  const noSpecSet = new Set([...supplementAlerts.noSpec, ...supplementAlerts.specNoRows]);
+
+  const skuCounts = new Map<string, number>();
+  const productNameMap = new Map<string, string>();
+
+  for (const r of rows) {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    if (!productNo || isExcludedProductNo(productNo)) continue;
+    skuCounts.set(productNo, (skuCounts.get(productNo) ?? 0) + 1);
+    if (!productNameMap.has(productNo)) {
+      productNameMap.set(productNo, rv(r.rawData, colMap.productName));
+    }
+  }
+
+  const seen = new Set<string>();
+  const products: MdProduct[] = [];
+
+  for (const r of rows) {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    if (!productNo || isExcludedProductNo(productNo) || seen.has(productNo)) continue;
+    seen.add(productNo);
+
+    const productName = productNameMap.get(productNo) ?? '';
+    const category = inferMainGroup(productName, productNo) || '未分類';
+
+    const releaseDateRaw = releaseDateMap.get(productNo) ?? '';
+    let releaseDate: string | undefined;
+    if (releaseDateRaw) {
+      const m = releaseDateRaw.match(/^(\d{4})(\d{2})(\d{2})/);
+      if (m) releaseDate = `${m[1]}-${m[2]}-${m[3]}`;
+    }
+
+    let status: string;
+    let nextAction: string;
+    if (noMaterialSet.has(productNo)) {
+      status = '素材未取得';
+      nextAction = '素材補完';
+    } else if (noCaptionSet.has(productNo) || noSpecSet.has(productNo)) {
+      status = '補完未取得';
+      nextAction = '素材補完';
+    } else {
+      status = '登録準備OK';
+      nextAction = 'CSV出力';
+    }
+
+    products.push({
+      productNo,
+      productName,
+      category,
+      releaseDate,
+      skuCount: skuCounts.get(productNo),
+      ecStock: null,
+      recentSales: null,
+      sellThroughRate: null,
+      status,
+      nextAction,
+    });
+  }
+
+  return products;
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+type ImportTabProps = { user: User | null; onSendToProducts?: (products: MdProduct[]) => void };
+
+export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const { skus: existingSkus } = useFsProducts(user); // refresh: Phase 1で復活
 
   const [step, setStep] = useState<Step>('upload');
@@ -2096,6 +2191,7 @@ export function ImportTab({ user }: ImportTabProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNew, setSavedNew] = useState(0);
   const [savedDiff, setSavedDiff] = useState(0);
+  const [sentCount, setSentCount] = useState(0);
 
   const [captionMap, setCaptionMap] = useState<Map<string, string>>(new Map());
   const [specMap, setSpecMap] = useState<Map<string, SpecData>>(new Map());
@@ -2365,6 +2461,13 @@ export function ImportTab({ user }: ImportTabProps) {
     [manualMaterialMap],
   );
 
+  const handleSendToProducts = useCallback(() => {
+    if (!onSendToProducts) return;
+    const products = reviewRowsToMdProducts(reviewRows, colMap, releaseDateMap, supplementAlerts);
+    onSendToProducts(products);
+    setSentCount(products.length);
+  }, [onSendToProducts, reviewRows, colMap, releaseDateMap, supplementAlerts]);
+
   // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
   const handleReset = () => {
@@ -2439,11 +2542,13 @@ export function ImportTab({ user }: ImportTabProps) {
             selectedCount={selectedCount}
             manualCount={manualCount}
             hasMissingSupplements={hasMissingSupplements}
+            sentCount={sentCount}
             onDownloadCcGoods={handleDownloadCcGoods}
             onDownloadVariation={handleDownloadVariation}
             onDownloadCategory={handleDownloadCategory}
             onDownloadMissingSupplements={handleDownloadMissingSupplements}
             onDownloadManualMaterial={handleDownloadManualMaterial}
+            onSendToProducts={handleSendToProducts}
           />
           {manualMaterialNos.length > 0 && (
             <ManualMaterialPanel

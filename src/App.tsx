@@ -16,6 +16,7 @@ import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
 import type { SortType } from './types/sort';
+import type { MdProduct } from './types/md';
 import styles from './App.module.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
   const { tasks, loading, error, addTask, toggleTask, deleteTask, editTask, clearCompleted } = useTasks(user);
 
   const [activeTab, setActiveTab] = useState<AppTab>('tasks');
+  const [mdProducts, setMdProducts] = useState<MdProduct[]>([]);
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
@@ -95,10 +97,18 @@ function App() {
         )}
 
         {/* ── EC tabs ── */}
-        {activeTab === 'products'  && <ProductsTab />}
+        {activeTab === 'products'  && <ProductsTab products={mdProducts} />}
         {activeTab === 'schedules' && <ScheduleTab user={user} />}
         {activeTab === 'inventory' && <InventoryTab user={user} />}
-        {activeTab === 'import'    && <ImportTab user={user} />}
+        {activeTab === 'import'    && (
+          <ImportTab
+            user={user}
+            onSendToProducts={(products) => {
+              setMdProducts(products);
+              setActiveTab('products');
+            }}
+          />
+        )}
       </main>
     </div>
   );

@@ -546,6 +546,12 @@
   margin: 0;
 }
 
+.sampleNotice[data-real] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
 .tableWrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
