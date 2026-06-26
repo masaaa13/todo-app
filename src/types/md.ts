@@ -11,6 +11,21 @@ export type MdProduct = {
   nextAction: string;
 };
 
+export type MdVariation = {
+  productNo: string;
+  productName: string;
+  skuCode: string;
+  color?: string;
+  size?: string;
+  category: string;
+  releaseDate?: string;
+  status: string;
+  nextAction: string;
+  ecStock?: number | null;
+  recentSales?: number | null;
+  sellThroughRate?: number | null;
+};
+
 export type WishlistItem = {
   productNo: string;
   productName: string;

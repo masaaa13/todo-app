@@ -17,10 +17,11 @@ import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
 import type { SortType } from './types/sort';
-import type { MdProduct } from './types/md';
+import type { MdProduct, MdVariation } from './types/md';
 import styles from './App.module.css';
 
-const MD_PRODUCTS_KEY = 'ecTodo.mdProducts';
+const MD_PRODUCTS_KEY   = 'ecTodo.mdProducts';
+const MD_VARIATIONS_KEY = 'ecTodo.mdVariations';
 
 function loadMdProductsFromStorage(): { products: MdProduct[]; savedAt: string | null } {
   try {
@@ -31,6 +32,18 @@ function loadMdProductsFromStorage(): { products: MdProduct[]; savedAt: string |
     return { products: parsed.products, savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : null };
   } catch {
     return { products: [], savedAt: null };
+  }
+}
+
+function loadMdVariationsFromStorage(): { variations: MdVariation[]; savedAt: string | null } {
+  try {
+    const raw = localStorage.getItem(MD_VARIATIONS_KEY);
+    if (!raw) return { variations: [], savedAt: null };
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.variations)) return { variations: [], savedAt: null };
+    return { variations: parsed.variations, savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : null };
+  } catch {
+    return { variations: [], savedAt: null };
   }
 }
 
@@ -51,6 +64,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('products');
   const [mdProducts, setMdProducts] = useState<MdProduct[]>([]);
   const [mdProductsSavedAt, setMdProductsSavedAt] = useState<string | null>(null);
+  const [mdVariations, setMdVariations] = useState<MdVariation[]>([]);
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
@@ -63,12 +77,18 @@ function App() {
       setMdProducts(products);
       setMdProductsSavedAt(savedAt);
     }
+    const { variations } = loadMdVariationsFromStorage();
+    if (variations.length > 0) {
+      setMdVariations(variations);
+    }
   }, []);
 
   const clearMdProductsStorage = useCallback(() => {
     localStorage.removeItem(MD_PRODUCTS_KEY);
+    localStorage.removeItem(MD_VARIATIONS_KEY);
     setMdProducts([]);
     setMdProductsSavedAt(null);
+    setMdVariations([]);
   }, []);
 
   const activeCount = tasks.filter((t) => !t.completed).length;
@@ -133,6 +153,7 @@ function App() {
           {activeTab === 'products' && (
             <ProductsTab
               products={mdProducts}
+              variations={mdVariations}
               savedAt={mdProductsSavedAt}
               onClearProducts={clearMdProductsStorage}
             />
@@ -142,6 +163,7 @@ function App() {
           {activeTab === 'wishlist' && (
             <WishlistTab products={mdProducts} />
           )}
+
 
           {/* All other tabs: centered standard width */}
           {activeTab !== 'products' && activeTab !== 'wishlist' && (
@@ -194,11 +216,13 @@ function App() {
               {activeTab === 'import' && (
                 <ImportTab
                   user={user}
-                  onSendToProducts={(products) => {
+                  onSendToProducts={(products, variations) => {
                     const now = new Date().toISOString();
                     localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products, savedAt: now }));
+                    localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations, savedAt: now }));
                     setMdProducts(products);
                     setMdProductsSavedAt(now);
+                    setMdVariations(variations);
                     setActiveTab('products');
                   }}
                 />

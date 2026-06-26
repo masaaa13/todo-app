@@ -5,7 +5,7 @@ import Encoding from 'encoding-japanese';
 import { useFsProducts } from '../hooks/useFsProducts';
 import type { ImportRowStatus } from '../types/importJob';
 import { IMPORT_ROW_STATUS_LABELS } from '../types/importJob';
-import type { MdProduct } from '../types/md';
+import type { MdProduct, MdVariation } from '../types/md';
 import styles from './ImportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -2172,9 +2172,57 @@ function reviewRowsToMdProducts(
   return products;
 }
 
+function reviewRowsToMdVariations(
+  rows: ReviewRow[],
+  colMap: ColMap,
+  releaseDateMap: Map<string, string>,
+  supplementAlerts: SupplementAlerts,
+): MdVariation[] {
+  const noMaterialSet = new Set(supplementAlerts.noMaterial);
+  const noCaptionSet = new Set(supplementAlerts.noCaption);
+  const noSpecSet = new Set([...supplementAlerts.noSpec, ...supplementAlerts.specNoRows]);
+  const variations: MdVariation[] = [];
+
+  for (const r of rows) {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    if (!productNo || isExcludedProductNo(productNo)) continue;
+    const skuCode = r.skuNo || rv(r.rawData, colMap.skuNo);
+    if (!skuCode) continue;
+
+    const productName = rv(r.rawData, colMap.productName);
+    const color = colMap.colorDisplay ? (rv(r.rawData, colMap.colorDisplay) || undefined) : undefined;
+    const size  = colMap.sizeName    ? (rv(r.rawData, colMap.sizeName)    || undefined) : undefined;
+    const category = inferMainGroup(productName, productNo) || '未分類';
+
+    const releaseDateRaw = releaseDateMap.get(productNo) ?? '';
+    let releaseDate: string | undefined;
+    if (releaseDateRaw) {
+      const m = releaseDateRaw.match(/^(\d{4})(\d{2})(\d{2})/);
+      if (m) releaseDate = `${m[1]}-${m[2]}-${m[3]}`;
+    }
+
+    let status: string;
+    let nextAction: string;
+    if (noMaterialSet.has(productNo)) {
+      status = '素材未取得'; nextAction = '素材補完';
+    } else if (noCaptionSet.has(productNo) || noSpecSet.has(productNo)) {
+      status = '補完未取得'; nextAction = '素材補完';
+    } else {
+      status = '登録準備OK'; nextAction = 'CSV出力';
+    }
+
+    variations.push({
+      productNo, productName, skuCode, color, size, category, releaseDate,
+      status, nextAction, ecStock: null, recentSales: null, sellThroughRate: null,
+    });
+  }
+
+  return variations;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-type ImportTabProps = { user: User | null; onSendToProducts?: (products: MdProduct[]) => void };
+type ImportTabProps = { user: User | null; onSendToProducts?: (products: MdProduct[], variations: MdVariation[]) => void };
 
 export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const { skus: existingSkus } = useFsProducts(user); // refresh: Phase 1で復活
@@ -2464,7 +2512,8 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const handleSendToProducts = useCallback(() => {
     if (!onSendToProducts) return;
     const products = reviewRowsToMdProducts(reviewRows, colMap, releaseDateMap, supplementAlerts);
-    onSendToProducts(products);
+    const variations = reviewRowsToMdVariations(reviewRows, colMap, releaseDateMap, supplementAlerts);
+    onSendToProducts(products, variations);
     setSentCount(products.length);
   }, [onSendToProducts, reviewRows, colMap, releaseDateMap, supplementAlerts]);
 

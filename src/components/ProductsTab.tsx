@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
-import type { MdProduct } from '../types/md';
+import type { MdProduct, MdVariation } from '../types/md';
 import styles from './ProductsTab.module.css';
 
-// ── Dummy data ────────────────────────────────────────────────────────────
+type ViewMode = 'product' | 'variation';
+
+// ── Dummy data ────────────────────────────────────────────────────────────────
 
 const DUMMY_PRODUCTS: MdProduct[] = [
   {
@@ -55,7 +57,7 @@ const DUMMY_PRODUCTS: MdProduct[] = [
   },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function csvEscape(v: string): string {
   if (v.includes(',') || v.includes('"') || v.includes('\n')) {
@@ -82,12 +84,42 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
     return cols.map(csvEscape).join(',');
   });
   const content = [header, ...rows].join('\r\n');
-  const bom = '\uFEFF';
+  const bom = '﻿';
   const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'mdProducts.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadMdVariationsCsv(variations: MdVariation[]): void {
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション';
+  const rows = variations.map((v) => {
+    const cols = [
+      v.productNo,
+      v.productName,
+      v.skuCode,
+      v.color ?? '',
+      v.size ?? '',
+      v.category,
+      v.releaseDate ?? '',
+      v.ecStock != null ? String(v.ecStock) : '準備中',
+      v.recentSales != null ? String(v.recentSales) : '準備中',
+      v.sellThroughRate != null ? String(v.sellThroughRate) : '準備中',
+      v.status,
+      v.nextAction,
+    ];
+    return cols.map(csvEscape).join(',');
+  });
+  const content = [header, ...rows].join('\r\n');
+  const bom = '﻿';
+  const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mdVariations.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -102,32 +134,30 @@ function formatSavedAt(iso: string): string {
   return `${y}/${mo}/${day} ${h}:${min}`;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 type DashboardHeaderProps = {
   isReal: boolean;
   savedAt: string | null;
-  filteredProducts: MdProduct[];
-  totalCount: number;
   onClearProducts: () => void;
+  csvLabel: string;
+  csvNote: string;
+  onCsvDownload: () => void;
+  csvDisabled: boolean;
 };
 
-function DashboardHeader({ isReal, savedAt, filteredProducts, totalCount, onClearProducts }: DashboardHeaderProps) {
+function DashboardHeader({
+  isReal, savedAt, onClearProducts,
+  csvLabel, csvNote, onCsvDownload, csvDisabled,
+}: DashboardHeaderProps) {
   const badgeVariant = !isReal ? 'sample' : savedAt ? 'saved' : 'temp';
   const badgeText = !isReal ? 'サンプル表示中' : savedAt ? '保存済みデータ表示中' : '一時反映データ表示中';
-  const isFiltered = filteredProducts.length !== totalCount;
 
   const handleClear = () => {
     if (window.confirm('保存された商品一覧データをクリアします。よろしいですか？')) {
       onClearProducts();
     }
   };
-
-  const csvTitle = isReal
-    ? isFiltered
-      ? `表示中${filteredProducts.length}件 / 全${totalCount}件を出力`
-      : `${filteredProducts.length}件を出力`
-    : '商品登録CSVタブから商品一覧へ反映するとCSV出力できます。';
 
   return (
     <div className={styles.dashboardHeader}>
@@ -148,18 +178,14 @@ function DashboardHeader({ isReal, savedAt, filteredProducts, totalCount, onClea
         <div className={styles.csvBtnWrap}>
           <button
             className={styles.csvExportBtn}
-            onClick={() => downloadMdProductsCsv(filteredProducts)}
-            disabled={!isReal}
-            title={csvTitle}
+            onClick={onCsvDownload}
+            disabled={csvDisabled}
+            title={csvNote}
           >
-            ⬇ 商品一覧.csv
+            {csvLabel}
           </button>
-          {isReal && (
-            <span className={styles.csvBtnNote}>
-              {isFiltered
-                ? `表示中${filteredProducts.length}件 / 全${totalCount}件`
-                : `表示中${filteredProducts.length}件を出力`}
-            </span>
+          {!csvDisabled && (
+            <span className={styles.csvBtnNote}>{csvNote}</span>
           )}
         </div>
         {isReal && (
@@ -171,6 +197,33 @@ function DashboardHeader({ isReal, savedAt, filteredProducts, totalCount, onClea
     </div>
   );
 }
+
+// ── View toggle ───────────────────────────────────────────────────────────────
+
+function ViewToggle({ viewMode, onChangeMode }: { viewMode: ViewMode; onChangeMode: (m: ViewMode) => void }) {
+  return (
+    <div className={styles.viewToggleWrap}>
+      <div className={styles.viewToggle}>
+        <button
+          className={styles.viewToggleBtn}
+          data-active={viewMode === 'product' || undefined}
+          onClick={() => onChangeMode('product')}
+        >
+          商品別
+        </button>
+        <button
+          className={styles.viewToggleBtn}
+          data-active={viewMode === 'variation' || undefined}
+          onClick={() => onChangeMode('variation')}
+        >
+          バリエーション別
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── KPI rows ──────────────────────────────────────────────────────────────────
 
 type KpiRowProps = { products: MdProduct[]; isReal: boolean };
 
@@ -196,6 +249,34 @@ function KpiRow({ products, isReal }: KpiRowProps) {
     </div>
   );
 }
+
+function VariationKpiRow({ variations, isReal }: { variations: MdVariation[]; isReal: boolean }) {
+  const uniqueProductCount = useMemo(
+    () => new Set(variations.map((v) => v.productNo)).size,
+    [variations],
+  );
+  const kpis = [
+    { label: '登録商品数', value: isReal ? String(uniqueProductCount) : '—', active: isReal },
+    { label: 'SKU数', value: isReal ? String(variations.length) : '—', active: isReal },
+    { label: '在庫あり', value: '準備中', active: false },
+    { label: '売れ筋候補', value: '準備中', active: false },
+    { label: '死に筋候補', value: '準備中', active: false },
+    { label: '欲しいもの候補', value: '準備中', active: false },
+  ];
+
+  return (
+    <div className={styles.kpiRow}>
+      {kpis.map(({ label, value, active }) => (
+        <div key={label} className={styles.kpiCard} data-active={active || undefined}>
+          <span className={styles.kpiValue}>{value}</span>
+          <span className={styles.kpiLabel}>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Filter panels ─────────────────────────────────────────────────────────────
 
 type FilterPanelProps = {
   keyword: string;
@@ -272,6 +353,58 @@ function FilterPanel({
   );
 }
 
+function VariationFilterPanel({
+  keyword, category, status, categories, statuses,
+  onKeyword, onCategory, onStatus, filteredCount, totalCount,
+}: FilterPanelProps) {
+  return (
+    <div className={styles.filterPanel}>
+      <div className={styles.filterPanelTitle}>フィルター</div>
+      <div className={styles.filterGroup}>
+        <label className={styles.filterLabel}>キーワード</label>
+        <input
+          className={styles.filterInput}
+          type="search"
+          placeholder="品番・商品名・SKU・カラー・サイズ"
+          value={keyword}
+          onChange={(e) => onKeyword(e.target.value)}
+        />
+      </div>
+      <div className={styles.filterGroup}>
+        <label className={styles.filterLabel}>カテゴリ</label>
+        <select className={styles.filterSelect} value={category} onChange={(e) => onCategory(e.target.value)}>
+          <option value="">全て</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className={styles.filterGroup}>
+        <label className={styles.filterLabel}>ステータス</label>
+        <select className={styles.filterSelect} value={status} onChange={(e) => onStatus(e.target.value)}>
+          <option value="">全て</option>
+          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <div className={styles.filterDivider} />
+      <div className={styles.filterCountArea}>
+        <div className={styles.filterCountRow}>
+          <span className={styles.filterCountLabel}>表示中</span>
+          <span className={styles.filterCountValue}>{filteredCount}件</span>
+        </div>
+        <div className={styles.filterCountRow}>
+          <span className={styles.filterCountLabel}>全体 (SKU数)</span>
+          <span className={styles.filterCountValue}>{totalCount}件</span>
+        </div>
+        <div className={`${styles.filterCountRow} ${styles.filterCountCsvRow}`}>
+          <span className={styles.filterCountLabel}>CSV出力対象</span>
+          <span className={styles.filterCountValue}>{filteredCount}件</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Pills ─────────────────────────────────────────────────────────────────────
+
 type StatusPillProps = { status: string };
 
 function StatusPill({ status }: StatusPillProps) {
@@ -295,6 +428,8 @@ function ActionPill({ action }: ActionPillProps) {
   else variant = 'neutral';
   return <span className={styles.actionPill} data-variant={variant}>{action}</span>;
 }
+
+// ── Table panels ──────────────────────────────────────────────────────────────
 
 type ProductTablePanelProps = {
   products: MdProduct[];
@@ -363,21 +498,11 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt }: ProductTab
                   <td className={styles.td}>
                     <span className={styles.numCell}>{p.skuCount ?? '—'}</span>
                   </td>
-                  <td className={styles.td}>
-                    <span className={styles.naCell}>準備中</span>
-                  </td>
-                  <td className={styles.td}>
-                    <span className={styles.naCell}>準備中</span>
-                  </td>
-                  <td className={styles.td}>
-                    <span className={styles.naCell}>準備中</span>
-                  </td>
-                  <td className={styles.td}>
-                    <StatusPill status={p.status} />
-                  </td>
-                  <td className={styles.td}>
-                    <ActionPill action={p.nextAction} />
-                  </td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><StatusPill status={p.status} /></td>
+                  <td className={styles.td}><ActionPill action={p.nextAction} /></td>
                 </tr>
               ))
             )}
@@ -387,6 +512,101 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt }: ProductTab
     </div>
   );
 }
+
+type VariationTablePanelProps = {
+  variations: MdVariation[];
+  totalCount: number;
+  hasVariations: boolean;
+};
+
+function VariationTablePanel({ variations, totalCount, hasVariations }: VariationTablePanelProps) {
+  if (!hasVariations) {
+    return (
+      <div className={styles.tablePanel}>
+        <div className={styles.variationEmptyNotice}>
+          商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと、バリエーション別一覧を表示できます。
+        </div>
+      </div>
+    );
+  }
+
+  const isFiltered = variations.length !== totalCount;
+
+  return (
+    <div className={styles.tablePanel}>
+      <div className={styles.tablePanelHeader}>
+        <p className={styles.sampleNotice} data-real={true}>
+          SKU別バリエーション一覧です。EC在庫・直近売上は次フェーズ（futureshop API連携）で反映予定です。
+        </p>
+        {isFiltered && (
+          <span className={styles.tableFilterNote}>
+            表示中 {variations.length}件 / 全{totalCount}件
+          </span>
+        )}
+      </div>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.th}>品番</th>
+              <th className={styles.th}>商品名</th>
+              <th className={styles.th}>SKU</th>
+              <th className={styles.th}>カラー</th>
+              <th className={styles.th}>サイズ</th>
+              <th className={styles.th}>カテゴリ</th>
+              <th className={styles.th}>発売日</th>
+              <th className={styles.th}>EC在庫</th>
+              <th className={styles.th}>直近売上</th>
+              <th className={styles.th}>消化率</th>
+              <th className={styles.th}>ステータス</th>
+              <th className={styles.th}>次アクション</th>
+            </tr>
+          </thead>
+          <tbody>
+            {variations.length === 0 ? (
+              <tr>
+                <td className={styles.emptyCell} colSpan={12}>該当するバリエーションがありません</td>
+              </tr>
+            ) : (
+              variations.map((v, i) => (
+                <tr key={`${v.skuCode}-${i}`} className={styles.tr}>
+                  <td className={styles.td}>
+                    <span className={styles.productNo}>{v.productNo}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.productName}>{v.productName}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.skuCell}>{v.skuCode}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.colorCell}>{v.color ?? '—'}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.sizeCell}>{v.size ?? '—'}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.categoryBadge}>{v.category}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span>
+                  </td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><span className={styles.naCell}>準備中</span></td>
+                  <td className={styles.td}><StatusPill status={v.status} /></td>
+                  <td className={styles.td}><ActionPill action={v.nextAction} /></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Next phase card ───────────────────────────────────────────────────────────
 
 function NextPhaseCard() {
   const items = [
@@ -413,32 +633,42 @@ function NextPhaseCard() {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 
 type ProductsTabProps = {
   products?: MdProduct[];
+  variations?: MdVariation[];
   savedAt?: string | null;
   onClearProducts?: () => void;
 };
 
-export function ProductsTab({ products = [], savedAt = null, onClearProducts }: ProductsTabProps) {
+export function ProductsTab({
+  products = [],
+  variations = [],
+  savedAt = null,
+  onClearProducts,
+}: ProductsTabProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>('product');
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
+  const [varKeyword, setVarKeyword] = useState('');
+  const [varCategory, setVarCategory] = useState('');
+  const [varStatus, setVarStatus] = useState('');
 
   const isReal = products.length > 0;
+  const hasVariations = variations.length > 0;
   const activeData = isReal ? products : DUMMY_PRODUCTS;
 
+  // Product mode
   const categories = useMemo(
     () => Array.from(new Set(activeData.map((p) => p.category))).filter(Boolean),
     [activeData],
   );
-
   const statuses = useMemo(
     () => Array.from(new Set(activeData.map((p) => p.status))).filter(Boolean),
     [activeData],
   );
-
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
     return activeData.filter((p) => {
@@ -449,37 +679,109 @@ export function ProductsTab({ products = [], savedAt = null, onClearProducts }: 
     });
   }, [activeData, keyword, category, status]);
 
+  // Variation mode
+  const varCategories = useMemo(
+    () => Array.from(new Set(variations.map((v) => v.category))).filter(Boolean),
+    [variations],
+  );
+  const varStatuses = useMemo(
+    () => Array.from(new Set(variations.map((v) => v.status))).filter(Boolean),
+    [variations],
+  );
+  const filteredVariations = useMemo(() => {
+    const kw = varKeyword.trim().toLowerCase();
+    return variations.filter((v) => {
+      if (kw) {
+        const hit = [v.productNo, v.productName, v.skuCode, v.color ?? '', v.size ?? '']
+          .some((s) => s.toLowerCase().includes(kw));
+        if (!hit) return false;
+      }
+      if (varCategory && v.category !== varCategory) return false;
+      if (varStatus && v.status !== varStatus) return false;
+      return true;
+    });
+  }, [variations, varKeyword, varCategory, varStatus]);
+
+  // CSV notes
+  const productCsvNote = isReal
+    ? filtered.length !== activeData.length
+      ? `表示中${filtered.length}件 / 全${activeData.length}件`
+      : `${filtered.length}件を出力`
+    : '商品登録CSVタブから反映するとCSV出力できます。';
+
+  const variationCsvNote = hasVariations
+    ? filteredVariations.length !== variations.length
+      ? `表示中${filteredVariations.length}件 / 全${variations.length}件`
+      : `${filteredVariations.length}件を出力`
+    : 'バリエーションデータがありません。商品登録CSVタブから反映してください。';
+
   return (
     <div className={styles.root}>
       <DashboardHeader
         isReal={isReal}
         savedAt={savedAt}
-        filteredProducts={filtered}
-        totalCount={activeData.length}
         onClearProducts={onClearProducts ?? (() => {})}
+        csvLabel={viewMode === 'product' ? '⬇ 商品一覧.csv' : '⬇ バリエーション一覧.csv'}
+        csvNote={viewMode === 'product' ? productCsvNote : variationCsvNote}
+        onCsvDownload={
+          viewMode === 'product'
+            ? () => downloadMdProductsCsv(filtered)
+            : () => downloadMdVariationsCsv(filteredVariations)
+        }
+        csvDisabled={viewMode === 'product' ? !isReal : !hasVariations}
       />
-      <KpiRow products={activeData} isReal={isReal} />
-      <div className={styles.mainLayout}>
-        <FilterPanel
-          keyword={keyword}
-          category={category}
-          status={status}
-          categories={categories}
-          statuses={statuses}
-          onKeyword={setKeyword}
-          onCategory={setCategory}
-          onStatus={setStatus}
-          filteredCount={filtered.length}
-          totalCount={activeData.length}
-        />
-        <ProductTablePanel
-          products={filtered}
-          totalCount={activeData.length}
-          isReal={isReal}
-          savedAt={savedAt}
-        />
-      </div>
-      <NextPhaseCard />
+
+      <ViewToggle viewMode={viewMode} onChangeMode={setViewMode} />
+
+      {viewMode === 'product' ? (
+        <>
+          <KpiRow products={activeData} isReal={isReal} />
+          <div className={styles.mainLayout}>
+            <FilterPanel
+              keyword={keyword}
+              category={category}
+              status={status}
+              categories={categories}
+              statuses={statuses}
+              onKeyword={setKeyword}
+              onCategory={setCategory}
+              onStatus={setStatus}
+              filteredCount={filtered.length}
+              totalCount={activeData.length}
+            />
+            <ProductTablePanel
+              products={filtered}
+              totalCount={activeData.length}
+              isReal={isReal}
+              savedAt={savedAt}
+            />
+          </div>
+          <NextPhaseCard />
+        </>
+      ) : (
+        <>
+          <VariationKpiRow variations={variations} isReal={hasVariations} />
+          <div className={styles.mainLayout}>
+            <VariationFilterPanel
+              keyword={varKeyword}
+              category={varCategory}
+              status={varStatus}
+              categories={varCategories}
+              statuses={varStatuses}
+              onKeyword={setVarKeyword}
+              onCategory={setVarCategory}
+              onStatus={setVarStatus}
+              filteredCount={filteredVariations.length}
+              totalCount={variations.length}
+            />
+            <VariationTablePanel
+              variations={filteredVariations}
+              totalCount={variations.length}
+              hasVariations={hasVariations}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
