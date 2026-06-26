@@ -68,6 +68,34 @@ type SupplementAlerts = {
   releaseDateSkipReason: string;
 };
 
+type ImportHistorySkuRow = {
+  productNo: string; productName: string; skuCode: string;
+  color: string; size: string; janCode: string; price: string;
+};
+
+type ImportHistoryEntry = {
+  id: string;
+  datetime: string;
+  filename: string;
+  skuCount: number;
+  productCount: number;
+  status: '取込済み' | '商品一覧反映済み';
+  skuRows: ImportHistorySkuRow[];
+};
+
+type ImportSavedState = {
+  filename: string;
+  savedAt: string;
+  skuCount: number;
+  productCount: number;
+  reviewRows: ReviewRow[];
+  colMap: ColMap;
+  captionFilename: string;
+  specFilename: string;
+  materialFilename: string;
+  mdFilename: string;
+};
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const EMPTY_COLMAP: ColMap = {
@@ -79,14 +107,13 @@ const PREVIEW_ROWS = 5;
 const MAX_PREVIEW_COLS = 10;
 const DEFAULT_RELEASE_YEAR = 2026;
 const RELEASE_TIME_SUFFIX = '12:00';
-const STEP_ORDER: Step[] = ['upload', 'sheet', 'columns', 'review'];
-const STEP_LABELS: Record<Step, string> = {
-  upload: 'ファイル', sheet: 'シート選択',
-  columns: '列設定', review: '確認・保存', done: '完了',
-};
 const SHEET_KIND_LABELS: Record<SheetKind, string> = {
   sku: 'SKU', md: 'MD表・対象外', unknown: '不明',
 };
+
+const IMPORT_STATE_KEY   = 'ecTodo.importState';
+const IMPORT_HISTORY_KEY = 'ecTodo.importHistory';
+const MAX_HISTORY = 10;
 
 // Full 112-column header matching futureshop ccGoods CSV export exactly
 const CCGOODS_HEADERS: readonly string[] = [
@@ -1624,98 +1651,126 @@ function SupplementSlot({ label, desc, hint, accept = '.xlsx,.xls', filename, lo
 
 type FileIntakeCardProps = {
   skuFilename: string;
+  skuCount: number;
   captionFilename: string;
   specFilename: string;
   materialFilename: string;
   mdFilename: string;
+  swatchFilename: string;
   captionLoading: boolean;
   specLoading: boolean;
   materialLoading: boolean;
   mdLoading: boolean;
+  swatchLoading: boolean;
   onCaptionFile: (file: File) => Promise<void>;
   onSpecFile: (file: File) => Promise<void>;
   onMaterialFile: (file: File) => Promise<void>;
   onMdFile: (file: File) => Promise<void>;
+  onSwatchFile: (file: File) => Promise<void>;
+  onGoToColumns: () => void;
 };
 
-function shortenMdFilename(filename: string): string {
-  return /^\d+MD\.xlsx$/i.test(filename) ? 'MD.xlsx' : filename;
-}
-
 function FileIntakeCard({
-  skuFilename,
-  captionFilename, specFilename, materialFilename, mdFilename,
-  captionLoading, specLoading, materialLoading, mdLoading,
-  onCaptionFile, onSpecFile, onMaterialFile, onMdFile,
+  skuFilename, skuCount,
+  captionFilename, specFilename, materialFilename, mdFilename, swatchFilename,
+  captionLoading, specLoading, materialLoading, mdLoading, swatchLoading,
+  onCaptionFile, onSpecFile, onMaterialFile, onMdFile, onSwatchFile,
+  onGoToColumns,
 }: FileIntakeCardProps) {
-  const mdDisplayName = mdFilename ? shortenMdFilename(mdFilename) : '';
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
         <span className={styles.sectionCardNum}>1</span>
         ファイル取込
+        <button className={styles.columnsLinkBtn} onClick={onGoToColumns} title="列マッピングを確認・変更する">
+          列設定を変更
+        </button>
+      </div>
+      <div className={styles.skuSummaryChip}>
+        ✅ SKUファイル取込済み：{skuFilename}（{skuCount} SKU）
       </div>
       <div className={styles.supplementSlots}>
-        <div className={styles.supplementSlot}>
-          <div className={styles.supplementSlotLabel}>SKUファイル</div>
-          <div className={styles.supplementSlotDesc}>商品番号・SKU・JAN・カラー・サイズ</div>
-          <div className={styles.supplementDropZone} data-loaded={skuFilename ? true : undefined} style={{ cursor: 'default' }}>
-            {skuFilename ? `✅ ${skuFilename}` : '未取込'}
-          </div>
-        </div>
         <SupplementSlot
-          label="商品説明（大）"
-          desc="商品説明（大）"
+          label="キャプション"
+          desc="商品説明（大）に入れるcaption.xlsxをアップロード"
           hint="caption.xlsx をドロップ"
           filename={captionFilename}
           loading={captionLoading}
           onFile={onCaptionFile}
         />
         <SupplementSlot
-          label="独自コメント（3） 企画寸"
-          desc="サイズ表"
+          label="企画寸"
+          desc="サイズ表に使用する企画寸ファイルをアップロード"
           hint="design_spec.xlsx をドロップ"
           filename={specFilename}
           loading={specLoading}
           onFile={onSpecFile}
         />
         <SupplementSlot
-          label="独自コメント（3）素材"
-          desc="素材表記"
-          hint="swatch.pdf / 素材上書き.xlsx をドロップ"
-          accept=".xlsx,.xls,.csv,.pdf,application/pdf"
+          label="素材"
+          desc="商品素材を補完する素材一覧ファイルをアップロード"
+          hint="素材上書き.xlsx をドロップ"
           filename={materialFilename}
           loading={materialLoading}
           onFile={onMaterialFile}
         />
         <SupplementSlot
-          label="販売期間（From）発売日"
-          desc="販売期間From"
-          hint="1251MD.xlsx をドロップ"
-          filename={mdDisplayName}
+          label="MD表"
+          desc="販売期間From / 発売日を補完するMD表をアップロード"
+          hint="MD表.xlsx をドロップ"
+          filename={mdFilename}
           loading={mdLoading}
           onFile={onMdFile}
         />
       </div>
+      <details className={styles.swatchDetails}>
+        <summary className={styles.swatchSummary}>任意：swatch PDF / 素材PDF</summary>
+        <p className={styles.swatchNote}>
+          PDFからの素材読み取りは精度が安定しないため、通常は素材上書き.xlsxの利用を推奨します。
+        </p>
+        <SupplementSlot
+          label="swatch PDF"
+          hint="swatch.pdf をドロップ"
+          accept=".pdf,application/pdf"
+          filename={swatchFilename}
+          loading={swatchLoading}
+          onFile={onSwatchFile}
+        />
+      </details>
     </div>
   );
 }
 
 // ── StepIndicator ─────────────────────────────────────────────────────────────
 
-function StepIndicator({ current }: { current: Step }) {
-  const currentIdx = STEP_ORDER.indexOf(current);
+type StepDef = { id: Step; label: string };
+
+const STEPS_FULL: StepDef[] = [
+  { id: 'upload',  label: 'ファイル' },
+  { id: 'sheet',   label: 'シート選択' },
+  { id: 'columns', label: '列設定' },
+  { id: 'review',  label: '確認・保存' },
+];
+
+const STEPS_SKIP: StepDef[] = [
+  { id: 'upload',  label: 'ファイル' },
+  { id: 'sheet',   label: 'シート選択' },
+  { id: 'review',  label: '確認・保存' },
+];
+
+function StepIndicator({ steps, current }: { steps: StepDef[]; current: Step }) {
+  const currentIdx = steps.findIndex((s) => s.id === current);
   return (
     <div className={styles.stepIndicator}>
-      {STEP_ORDER.map((s, i) => (
+      {steps.map((s, i) => (
         <div
-          key={s}
+          key={s.id}
           className={styles.stepItem}
-          data-active={current === s || undefined}
+          data-active={current === s.id || undefined}
           data-done={i < currentIdx || undefined}
         >
           <span className={styles.stepNum}>{i + 1}</span>
-          <span className={styles.stepLabel}>{STEP_LABELS[s]}</span>
+          <span className={styles.stepLabel}>{s.label}</span>
         </div>
       ))}
     </div>
@@ -1724,9 +1779,15 @@ function StepIndicator({ current }: { current: Step }) {
 
 // ── UploadStep ────────────────────────────────────────────────────────────────
 
-type UploadStepProps = { onFile: (file: File) => Promise<void>; loading: boolean; error: string | null };
+type UploadStepProps = {
+  onFile: (file: File) => Promise<void>;
+  loading: boolean;
+  error: string | null;
+  savedState: ImportSavedState | null;
+  onResume: () => void;
+};
 
-function UploadStep({ onFile, loading, error }: UploadStepProps) {
+function UploadStep({ onFile, loading, error, savedState, onResume }: UploadStepProps) {
   const [drag, setDrag] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1741,32 +1802,58 @@ function UploadStep({ onFile, loading, error }: UploadStepProps) {
   );
 
   return (
-    <div
-      className={styles.uploadZone}
-      data-drag={drag || undefined}
-      data-loading={loading || undefined}
-      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={handleDrop}
-      onClick={() => !loading && inputRef.current?.click()}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
-      aria-label="Excelファイルをアップロード"
-    >
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        className={styles.fileInput}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }}
-      />
-      <div className={styles.uploadIcon}>{loading ? '⏳' : '📊'}</div>
-      <div className={styles.uploadText}>
-        {loading ? 'Excelを解析中...' : 'ファイルをドロップ、またはクリックして選択'}
+    <div className={styles.uploadStepWrap}>
+      <div className={styles.uploadIntro}>
+        <div className={styles.uploadIntroTitle}>SKUファイルを取り込む</div>
+        <div className={styles.uploadIntroDesc}>
+          商品管理番号・SKU・JAN・カラー・サイズが入ったSKUファイルをアップロードしてください。
+        </div>
       </div>
-      <div className={styles.uploadHint}>.xlsx / .xls / .csv に対応</div>
-      {error && <div className={styles.uploadError} role="alert">{error}</div>}
+
+      {savedState && (
+        <div className={styles.resumeCard}>
+          <div className={styles.resumeCardTitle}>前回の取込状態があります</div>
+          <div className={styles.resumeCardInfo}>
+            <span>📄 {savedState.filename}</span>
+            <span>SKU数: {savedState.skuCount}</span>
+            <span>対象品番: {savedState.productCount}</span>
+            <span>取込日時: {new Date(savedState.savedAt).toLocaleString('ja-JP')}</span>
+          </div>
+          <div className={styles.resumeCardBtns}>
+            <button className={styles.resumeBtn} onClick={onResume}>
+              前回の取込状態を開く
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div
+        className={styles.uploadZone}
+        data-drag={drag || undefined}
+        data-loading={loading || undefined}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={handleDrop}
+        onClick={() => !loading && inputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
+        aria-label="SKUファイルをアップロード"
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          className={styles.fileInput}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }}
+        />
+        <div className={styles.uploadIcon}>{loading ? '⏳' : '📊'}</div>
+        <div className={styles.uploadText}>
+          {loading ? 'SKUファイルを解析中...' : 'SKUファイルをドロップ、またはクリックして選択'}
+        </div>
+        <div className={styles.uploadHint}>商品管理番号・SKU・JAN・カラー・サイズを含むファイル（.xlsx / .xls / .csv）</div>
+        {error && <div className={styles.uploadError} role="alert">{error}</div>}
+      </div>
     </div>
   );
 }
@@ -1863,7 +1950,12 @@ function SheetStep({ filename, sheets, selected, onSelect, onNext }: SheetStepPr
             </div>
             <PreviewTable headers={selected.headers} rows={selected.rows} />
             <div className={styles.stepActions}>
-              <button className={styles.nextBtn} onClick={onNext}>列設定へ →</button>
+              <button className={styles.nextBtn} onClick={onNext}>
+                {(() => {
+                  const m = autoDetect(selected.headers);
+                  return (m.skuNo || m.productNo) ? '確認・保存へ →' : '列設定へ →';
+                })()}
+              </button>
             </div>
           </>
         )
@@ -2098,6 +2190,120 @@ function DoneStep({ newCount, diffCount, onReset, onDownloadCcGoods, onDownloadV
   );
 }
 
+// ── Import state / history helpers ───────────────────────────────────────────
+
+function countUniqueProducts(rows: ReviewRow[], colMap: ColMap): number {
+  const nos = new Set<string>();
+  for (const r of rows) {
+    const pno = r.productNo || rv(r.rawData, colMap.productNo);
+    if (pno && !isExcludedProductNo(pno)) nos.add(pno);
+  }
+  return nos.size;
+}
+
+function reviewRowsToHistorySkuRows(rows: ReviewRow[], colMap: ColMap): ImportHistorySkuRow[] {
+  return rows.map((r) => ({
+    productNo: r.productNo || rv(r.rawData, colMap.productNo),
+    productName: rv(r.rawData, colMap.productName),
+    skuCode: r.skuNo || rv(r.rawData, colMap.skuNo),
+    color: colMap.colorDisplay ? rv(r.rawData, colMap.colorDisplay) : '',
+    size: colMap.sizeName ? rv(r.rawData, colMap.sizeName) : '',
+    janCode: rv(r.rawData, colMap.janCode),
+    price: rv(r.rawData, colMap.price),
+  }));
+}
+
+function saveImportStateToStorage(state: ImportSavedState): void {
+  try {
+    localStorage.setItem(IMPORT_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // QuotaExceededError: degrade gracefully — save without reviewRows
+    try {
+      const slim = { ...state, reviewRows: [] };
+      localStorage.setItem(IMPORT_STATE_KEY, JSON.stringify(slim));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function loadImportStateFromStorage(): ImportSavedState | null {
+  try {
+    const raw = localStorage.getItem(IMPORT_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ImportSavedState;
+  } catch {
+    return null;
+  }
+}
+
+function loadImportHistoryFromStorage(): ImportHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(IMPORT_HISTORY_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ImportHistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function saveImportHistoryToStorage(entries: ImportHistoryEntry[]): void {
+  try {
+    localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(entries));
+  } catch {
+    // ignore quota errors for history
+  }
+}
+
+function downloadHistoryCsv(entry: ImportHistoryEntry): void {
+  const header = '品番,商品名,SKU,カラー,サイズ,JAN,税込価格';
+  const rows = entry.skuRows.map((r) =>
+    [r.productNo, r.productName, r.skuCode, r.color, r.size, r.janCode, r.price].map(csvEscape).join(',')
+  );
+  const content = [header, ...rows].join('\r\n');
+  downloadCsv(`取込済みSKUデータ_${entry.filename.replace(/\.[^.]+$/, '')}.csv`, content);
+}
+
+// ── ImportHistorySection ──────────────────────────────────────────────────────
+
+function ImportHistorySection({ history, onClear }: { history: ImportHistoryEntry[]; onClear: () => void }) {
+  if (history.length === 0) return null;
+  return (
+    <div className={styles.sectionCard}>
+      <div className={styles.sectionCardHeading}>
+        <span className={styles.sectionCardNum}>📋</span>
+        取込履歴
+        <button className={styles.histClearBtn} onClick={onClear}>履歴をクリア</button>
+      </div>
+      <div className={styles.historyList}>
+        {history.map((entry) => (
+          <div key={entry.id} className={styles.historyEntry}>
+            <div className={styles.historyEntryMain}>
+              <span className={styles.historyFilename}>{entry.filename}</span>
+              <span className={styles.historyMeta}>{entry.skuCount} SKU / {entry.productCount}品番</span>
+              <span className={styles.historyDatetime}>{entry.datetime}</span>
+              <span
+                className={styles.historyStatus}
+                data-reflected={entry.status === '商品一覧反映済み' || undefined}
+              >
+                {entry.status}
+              </span>
+            </div>
+            <button
+              className={styles.histDownloadBtn}
+              onClick={() => downloadHistoryCsv(entry)}
+              disabled={entry.skuRows.length === 0}
+              title="取込済みSKUデータをCSVで保存"
+            >
+              ⬇ SKUデータ.csv
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 // ── MdProduct conversion ──────────────────────────────────────────────────────
@@ -2228,6 +2434,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const { skus: existingSkus } = useFsProducts(user); // refresh: Phase 1で復活
 
   const [step, setStep] = useState<Step>('upload');
+  const [columnsSkipped, setColumnsSkipped] = useState(false);
   const [filename, setFilename] = useState('');
   const [sheets, setSheets] = useState<ParsedSheet[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<ParsedSheet | null>(null);
@@ -2259,12 +2466,18 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const [captionFilename, setCaptionFilename] = useState('');
   const [specFilename, setSpecFilename] = useState('');
   const [materialFilename, setMaterialFilename] = useState('');
+  const [swatchFilename, setSwatchFilename] = useState('');
   const [captionLoading, setCaptionLoading] = useState(false);
   const [specLoading, setSpecLoading] = useState(false);
   const [materialLoading, setMaterialLoading] = useState(false);
+  const [swatchLoading, setSwatchLoading] = useState(false);
   const [releaseDateParseResult, setReleaseDateParseResult] = useState<ReleaseDateParseResult | null>(null);
   const [mdFilename, setMdFilename] = useState('');
   const [mdLoading, setMdLoading] = useState(false);
+
+  // localStorage: import state and history
+  const [savedState, setSavedState] = useState<ImportSavedState | null>(() => loadImportStateFromStorage());
+  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>(() => loadImportHistoryFromStorage());
 
   const skuMap = new Map(existingSkus.map((s) => [s.skuNo, s.rawData]));
 
@@ -2415,19 +2628,25 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const handleMaterialFile = async (file: File) => {
     setMaterialLoading(true);
     try {
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        // PDF: just show filename; SWATCH_MATERIAL_DEFAULT already loaded as initial state
-        setMaterialFilename(file.name);
-      } else {
-        const buffer = await file.arrayBuffer();
-        setMaterialMap(await parseMaterialXlsx(buffer));
-        setMaterialFilename(file.name);
-      }
+      const buffer = await file.arrayBuffer();
+      setMaterialMap(await parseMaterialXlsx(buffer));
+      setMaterialFilename(file.name);
     } catch {
       // silent — supplement is optional
     } finally {
       setMaterialLoading(false);
+    }
+  };
+
+  const handleSwatchFile = async (file: File) => {
+    setSwatchLoading(true);
+    try {
+      // PDF: just track filename; SWATCH_MATERIAL_DEFAULT already provides defaults
+      setSwatchFilename(file.name);
+    } catch {
+      // silent
+    } finally {
+      setSwatchLoading(false);
     }
   };
 
@@ -2444,15 +2663,74 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     }
   };
 
-  const handleToColumns = () => {
+  const commitToReview = (rows: ReviewRow[], map: ColMap, fname: string) => {
+    const skuCount = rows.length;
+    const productCount = countUniqueProducts(rows, map);
+    const state: ImportSavedState = {
+      filename: fname,
+      savedAt: new Date().toISOString(),
+      skuCount,
+      productCount,
+      reviewRows: rows,
+      colMap: map,
+      captionFilename,
+      specFilename,
+      materialFilename,
+      mdFilename,
+    };
+    saveImportStateToStorage(state);
+    setSavedState(state);
+
+    // Add to history
+    const newEntry: ImportHistoryEntry = {
+      id: Date.now().toString(),
+      datetime: new Date().toLocaleString('ja-JP'),
+      filename: fname,
+      skuCount,
+      productCount,
+      status: '取込済み',
+      skuRows: reviewRowsToHistorySkuRows(rows, map),
+    };
+    const updated = [newEntry, ...importHistory].slice(0, MAX_HISTORY);
+    setImportHistory(updated);
+    saveImportHistoryToStorage(updated);
+  };
+
+  const handleToColumnsOrReview = () => {
     if (!selectedSheet) return;
-    setColMap(autoDetect(selectedSheet.headers));
-    setStep('columns');
+    const autoMap = autoDetect(selectedSheet.headers);
+    setColMap(autoMap);
+    const canAutoSkip = Boolean(autoMap.skuNo || autoMap.productNo);
+    if (canAutoSkip) {
+      setColumnsSkipped(true);
+      const rows = classifyRows(selectedSheet.rows, autoMap, skuMap);
+      setReviewRows(rows);
+      commitToReview(rows, autoMap, filename);
+      setStep('review');
+    } else {
+      setColumnsSkipped(false);
+      setStep('columns');
+    }
   };
 
   const handleToReview = () => {
     if (!selectedSheet) return;
-    setReviewRows(classifyRows(selectedSheet.rows, colMap, skuMap));
+    const rows = classifyRows(selectedSheet.rows, colMap, skuMap);
+    setReviewRows(rows);
+    commitToReview(rows, colMap, filename);
+    setStep('review');
+  };
+
+  const handleResume = () => {
+    if (!savedState || savedState.reviewRows.length === 0) return;
+    setFilename(savedState.filename);
+    setColMap(savedState.colMap);
+    setReviewRows(savedState.reviewRows);
+    setColumnsSkipped(true);
+    setCaptionFilename(savedState.captionFilename || '');
+    setSpecFilename(savedState.specFilename || '');
+    setMaterialFilename(savedState.materialFilename || '');
+    setMdFilename(savedState.mdFilename || '');
     setStep('review');
   };
 
@@ -2515,12 +2793,20 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     const variations = reviewRowsToMdVariations(reviewRows, colMap, releaseDateMap, supplementAlerts);
     onSendToProducts(products, variations);
     setSentCount(products.length);
+    // Update history status to '商品一覧反映済み'
+    setImportHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const updated = [{ ...prev[0], status: '商品一覧反映済み' as const }, ...prev.slice(1)];
+      saveImportHistoryToStorage(updated);
+      return updated;
+    });
   }, [onSendToProducts, reviewRows, colMap, releaseDateMap, supplementAlerts]);
 
   // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
   const handleReset = () => {
     setStep('upload');
+    setColumnsSkipped(false);
     setFilename('');
     setSheets([]);
     setSelectedSheet(null);
@@ -2537,14 +2823,36 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     setCaptionFilename('');
     setSpecFilename('');
     setMaterialFilename('');
+    setSwatchFilename('');
+    setMdFilename('');
+    // Clear saved state to show fresh upload
+    localStorage.removeItem(IMPORT_STATE_KEY);
+    setSavedState(null);
   };
+
+  const activeSteps = columnsSkipped ? STEPS_SKIP : STEPS_FULL;
 
   return (
     <div className={styles.wrapper}>
-      {step !== 'done' && <StepIndicator current={step} />}
+      {step !== 'done' && <StepIndicator steps={activeSteps} current={step} />}
 
       {step === 'upload' && (
-        <UploadStep onFile={handleFile} loading={parseLoading} error={parseError} />
+        <>
+          <UploadStep
+            onFile={handleFile}
+            loading={parseLoading}
+            error={parseError}
+            savedState={savedState}
+            onResume={handleResume}
+          />
+          <ImportHistorySection
+            history={importHistory}
+            onClear={() => {
+              setImportHistory([]);
+              saveImportHistoryToStorage([]);
+            }}
+          />
+        </>
       )}
 
       {step === 'sheet' && (
@@ -2553,7 +2861,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           sheets={sheets}
           selected={selectedSheet}
           onSelect={setSelectedSheet}
-          onNext={handleToColumns}
+          onNext={handleToColumnsOrReview}
         />
       )}
 
@@ -2572,18 +2880,23 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           <PageHeaderCard />
           <FileIntakeCard
             skuFilename={filename}
+            skuCount={reviewRows.length}
             captionFilename={captionFilename}
             specFilename={specFilename}
             materialFilename={materialFilename}
             mdFilename={mdFilename}
+            swatchFilename={swatchFilename}
             captionLoading={captionLoading}
             specLoading={specLoading}
             materialLoading={materialLoading}
             mdLoading={mdLoading}
+            swatchLoading={swatchLoading}
             onCaptionFile={handleCaptionFile}
             onSpecFile={handleSpecFile}
             onMaterialFile={handleMaterialFile}
             onMdFile={handleMdFile}
+            onSwatchFile={handleSwatchFile}
+            onGoToColumns={() => setStep('columns')}
           />
           <SupplementStatusCard alerts={supplementAlerts} />
           <CsvOutputCard
@@ -2618,7 +2931,14 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
             error={saveError}
             onToggle={handleToggle}
             onToggleAll={handleToggleAll}
-            onBack={() => setStep('columns')}
+            onBack={() => setStep(columnsSkipped ? 'sheet' : 'columns')}
+          />
+          <ImportHistorySection
+            history={importHistory}
+            onClear={() => {
+              setImportHistory([]);
+              saveImportHistoryToStorage([]);
+            }}
           />
         </>
       )}

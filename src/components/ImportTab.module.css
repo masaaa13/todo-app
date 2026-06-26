@@ -1015,6 +1015,236 @@
   border-radius: 6px;
 }
 
+/* ── Upload step intro ── */
+.uploadStepWrap { display: flex; flex-direction: column; gap: 16px; }
+
+.uploadIntro {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+
+.uploadIntroTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px;
+}
+
+.uploadIntroDesc {
+  font-size: 0.82rem;
+  color: #475569;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Resume card ── */
+.resumeCard {
+  background: #fffbeb;
+  border: 1.5px solid #fbbf24;
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resumeCardTitle {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #92400e;
+  margin: 0;
+}
+
+.resumeCardInfo {
+  font-size: 0.82rem;
+  color: #78350f;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.resumeCardBtns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.resumeBtn {
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1.5px solid;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.resumeBtn[data-primary] {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: #fff;
+}
+.resumeBtn[data-primary]:hover { background: #d97706; }
+
+.resumeBtn[data-secondary] {
+  background: #fff;
+  border-color: #d97706;
+  color: #92400e;
+}
+.resumeBtn[data-secondary]:hover { background: #fef3c7; }
+
+/* ── SKU summary chip ── */
+.skuSummaryChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  margin-bottom: 12px;
+}
+
+/* ── Columns link button (on review screen) ── */
+.columnsLinkBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.columnsLinkBtn:hover { color: #374151; }
+
+/* ── Swatch PDF collapsible ── */
+.swatchDetails {
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.swatchSummary {
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f9fafb;
+  user-select: none;
+}
+.swatchSummary::-webkit-details-marker { display: none; }
+.swatchSummary::before { content: '▶'; font-size: 0.7rem; color: #9ca3af; }
+details[open] > .swatchSummary::before { content: '▼'; }
+
+.swatchNote {
+  font-size: 0.76rem;
+  color: #ef4444;
+  margin: 0 0 10px;
+  padding: 0 14px;
+  line-height: 1.5;
+}
+
+/* ── Import history section ── */
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.historyEntry {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.historyEntryMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.historyFilename {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyMeta {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.historyDatetime {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.historyStatus {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.historyStatus[data-reflected] {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.historyStatus:not([data-reflected]) {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.histDownloadBtn {
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.histDownloadBtn:hover { background: #dbeafe; }
+
+.histClearBtn {
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  background: #fff;
+  border: 1.5px solid #fca5a5;
+  color: #dc2626;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.histClearBtn:hover { background: #fee2e2; }
+
 /* ── Responsive ── */
 @media (max-width: 520px) {
   .colMapGrid { grid-template-columns: 1fr; }
@@ -1023,4 +1253,5 @@
   .statusPills { gap: 6px; }
   .statusPill { min-width: 70px; padding: 6px 10px; }
   .csvOutputBtns { gap: 6px; }
+  .historyEntry { flex-direction: column; align-items: flex-start; }
 }
