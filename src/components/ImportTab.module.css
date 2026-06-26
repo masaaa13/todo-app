@@ -1217,9 +1217,32 @@ details[open] > .swatchSummary::before { content: '▼'; }
   color: #92400e;
 }
 
-.histDownloadBtn {
+.histDownloadGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.histDownloadAllBtn {
   padding: 5px 12px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #1d4ed8;
+  border: 1.5px solid #1d4ed8;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  transition: background 0.15s;
+}
+.histDownloadAllBtn:hover { background: #1e40af; }
+
+.histDownloadBtn {
+  padding: 4px 10px;
+  font-size: 0.76rem;
   font-weight: 600;
   background: #eff6ff;
   border: 1.5px solid #bfdbfe;
@@ -1231,6 +1254,13 @@ details[open] > .swatchSummary::before { content: '▼'; }
   transition: background 0.15s;
 }
 .histDownloadBtn:hover { background: #dbeafe; }
+
+.histNoData {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+  align-self: center;
+}
 
 .histClearBtn {
   padding: 4px 10px;

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import Encoding from 'encoding-japanese';
 // import { supabase } from '../lib/supabase'; // Phase 1: DB保存実装時に復活
@@ -80,7 +80,7 @@ type ImportHistoryEntry = {
   skuCount: number;
   productCount: number;
   status: '取込済み' | '商品一覧反映済み';
-  skuRows: ImportHistorySkuRow[];
+  skuRows?: ImportHistorySkuRow[]; // optional — kept for backward compat with old entries
 };
 
 type ImportSavedState = {
@@ -94,6 +94,11 @@ type ImportSavedState = {
   specFilename: string;
   materialFilename: string;
   mdFilename: string;
+  // Supplement maps — serialized as plain objects for JSON storage
+  captionMapData: Record<string, string>;
+  specMapData: Record<string, SpecData>;
+  materialMapData: Record<string, string>; // merged (xlsx + manual)
+  releaseDateMapData: Record<string, string>;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -2215,17 +2220,6 @@ function countValidSkus(rows: ReviewRow[], colMap: ColMap): number {
   return count;
 }
 
-function reviewRowsToHistorySkuRows(rows: ReviewRow[], colMap: ColMap): ImportHistorySkuRow[] {
-  return rows.map((r) => ({
-    productNo: r.productNo || rv(r.rawData, colMap.productNo),
-    productName: rv(r.rawData, colMap.productName),
-    skuCode: r.skuNo || rv(r.rawData, colMap.skuNo),
-    color: colMap.colorDisplay ? rv(r.rawData, colMap.colorDisplay) : '',
-    size: colMap.sizeName ? rv(r.rawData, colMap.sizeName) : '',
-    janCode: rv(r.rawData, colMap.janCode),
-    price: rv(r.rawData, colMap.price),
-  }));
-}
 
 function saveImportStateToStorage(state: ImportSavedState): void {
   try {
@@ -2269,19 +2263,54 @@ function saveImportHistoryToStorage(entries: ImportHistoryEntry[]): void {
   }
 }
 
-function downloadHistoryCsv(entry: ImportHistoryEntry): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,JAN,税込価格';
-  const rows = entry.skuRows.map((r) =>
-    [r.productNo, r.productName, r.skuCode, r.color, r.size, r.janCode, r.price].map(csvEscape).join(',')
-  );
-  const content = [header, ...rows].join('\r\n');
-  downloadCsv(`取込済みSKUデータ_${entry.filename.replace(/\.[^.]+$/, '')}.csv`, content);
-}
-
 // ── ImportHistorySection ──────────────────────────────────────────────────────
 
-function ImportHistorySection({ history, onClear }: { history: ImportHistoryEntry[]; onClear: () => void }) {
+function ImportHistorySection({
+  history,
+  savedState,
+  onClear,
+}: {
+  history: ImportHistoryEntry[];
+  savedState: ImportSavedState | null;
+  onClear: () => void;
+}) {
   if (history.length === 0) return null;
+
+  const latestId = history[0]?.id;
+
+  const getExportData = () => {
+    if (!savedState || savedState.reviewRows.length === 0) return null;
+    const rows = savedState.reviewRows.map((r) => ({ ...r, selected: true }));
+    const captionMap = new Map(Object.entries(savedState.captionMapData ?? {}));
+    const specMap    = new Map<string, SpecData>(Object.entries(savedState.specMapData ?? {}));
+    const materialMap= new Map(Object.entries(savedState.materialMapData ?? {}));
+    const releaseDateMap = new Map(Object.entries(savedState.releaseDateMapData ?? {}));
+    return { rows, colMap: savedState.colMap, captionMap, specMap, materialMap, releaseDateMap };
+  };
+
+  const handleCcGoods = () => {
+    const d = getExportData();
+    if (!d) return;
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(d.rows, d.colMap, d.captionMap, d.specMap, d.materialMap, d.releaseDateMap));
+  };
+  const handleVariation = () => {
+    const d = getExportData();
+    if (!d) return;
+    downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(d.rows, d.colMap));
+  };
+  const handleCategory = () => {
+    const d = getExportData();
+    if (!d) return;
+    downloadShiftJisCsv('category.csv', generateCategoryCsv(d.rows, d.colMap));
+  };
+  const handleAll = () => {
+    const d = getExportData();
+    if (!d) return;
+    downloadCsv('ccGoods.csv', generateCcGoodsCsv(d.rows, d.colMap, d.captionMap, d.specMap, d.materialMap, d.releaseDateMap));
+    downloadCsv('goodsVariationDetail.csv', generateVariationDetailCsv(d.rows, d.colMap));
+    downloadShiftJisCsv('category.csv', generateCategoryCsv(d.rows, d.colMap));
+  };
+
   return (
     <div className={styles.sectionCard}>
       <div className={styles.sectionCardHeading}>
@@ -2290,29 +2319,39 @@ function ImportHistorySection({ history, onClear }: { history: ImportHistoryEntr
         <button className={styles.histClearBtn} onClick={onClear}>履歴をクリア</button>
       </div>
       <div className={styles.historyList}>
-        {history.map((entry) => (
-          <div key={entry.id} className={styles.historyEntry}>
-            <div className={styles.historyEntryMain}>
-              <span className={styles.historyFilename}>{entry.filename}</span>
-              <span className={styles.historyMeta}>{entry.skuCount} SKU / {entry.productCount}品番</span>
-              <span className={styles.historyDatetime}>{entry.datetime}</span>
-              <span
-                className={styles.historyStatus}
-                data-reflected={entry.status === '商品一覧反映済み' || undefined}
-              >
-                {entry.status}
-              </span>
+        {history.map((entry) => {
+          const isLatest = entry.id === latestId;
+          const canExport = isLatest && savedState !== null && savedState.reviewRows.length > 0;
+          return (
+            <div key={entry.id} className={styles.historyEntry}>
+              <div className={styles.historyEntryMain}>
+                <span className={styles.historyFilename}>{entry.filename}</span>
+                <span className={styles.historyMeta}>{entry.skuCount} SKU / {entry.productCount}品番</span>
+                <span className={styles.historyDatetime}>{entry.datetime}</span>
+                <span
+                  className={styles.historyStatus}
+                  data-reflected={entry.status === '商品一覧反映済み' || undefined}
+                >
+                  {entry.status}
+                </span>
+              </div>
+              {canExport ? (
+                <div className={styles.histDownloadGroup}>
+                  <button className={styles.histDownloadAllBtn} onClick={handleAll} title="3ファイルをまとめてダウンロード">
+                    ⬇ 登録CSV一式
+                  </button>
+                  <button className={styles.histDownloadBtn} onClick={handleCcGoods}>ccGoods.csv</button>
+                  <button className={styles.histDownloadBtn} onClick={handleVariation}>variationDetail.csv</button>
+                  <button className={styles.histDownloadBtn} onClick={handleCategory}>category.csv</button>
+                </div>
+              ) : (
+                <span className={styles.histNoData}>
+                  {isLatest ? '再取込後に出力可能' : '最新取込のみ出力可能'}
+                </span>
+              )}
             </div>
-            <button
-              className={styles.histDownloadBtn}
-              onClick={() => downloadHistoryCsv(entry)}
-              disabled={entry.skuRows.length === 0}
-              title="取込済みSKUデータをCSVで保存"
-            >
-              ⬇ SKUデータ.csv
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -2677,6 +2716,31 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     }
   };
 
+  // Keep importState in sync as supplement files are loaded during review step
+  useEffect(() => {
+    if (step !== 'review' || reviewRows.length === 0) return;
+    const state: ImportSavedState = {
+      filename,
+      savedAt: new Date().toISOString(),
+      skuCount: countValidSkus(reviewRows, colMap),
+      productCount: countUniqueProducts(reviewRows, colMap),
+      reviewRows,
+      colMap,
+      captionFilename,
+      specFilename,
+      materialFilename,
+      mdFilename,
+      captionMapData: Object.fromEntries(captionMap),
+      specMapData: Object.fromEntries(specMap),
+      materialMapData: Object.fromEntries(mergedMaterialMap),
+      releaseDateMapData: Object.fromEntries(releaseDateMap),
+    };
+    saveImportStateToStorage(state);
+    setSavedState(state);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, captionFilename, specFilename, materialFilename, mdFilename,
+      captionMap, specMap, mergedMaterialMap, releaseDateMap]);
+
   const commitToReview = (rows: ReviewRow[], map: ColMap, fname: string) => {
     const skuCount = countValidSkus(rows, map);
     const productCount = countUniqueProducts(rows, map);
@@ -2691,11 +2755,16 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
       specFilename,
       materialFilename,
       mdFilename,
+      // Supplement maps may be empty at this point; useEffect keeps them updated
+      captionMapData: Object.fromEntries(captionMap),
+      specMapData: Object.fromEntries(specMap),
+      materialMapData: Object.fromEntries(mergedMaterialMap),
+      releaseDateMapData: Object.fromEntries(releaseDateMap),
     };
     saveImportStateToStorage(state);
     setSavedState(state);
 
-    // Add to history
+    // Add to history (no skuRows — history now uses savedState for CSV export)
     const newEntry: ImportHistoryEntry = {
       id: Date.now().toString(),
       datetime: new Date().toLocaleString('ja-JP'),
@@ -2703,7 +2772,6 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
       skuCount,
       productCount,
       status: '取込済み',
-      skuRows: reviewRowsToHistorySkuRows(rows, map),
     };
     const updated = [newEntry, ...importHistory].slice(0, MAX_HISTORY);
     setImportHistory(updated);
@@ -2745,6 +2813,27 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     setSpecFilename(savedState.specFilename || '');
     setMaterialFilename(savedState.materialFilename || '');
     setMdFilename(savedState.mdFilename || '');
+    // Restore supplement maps
+    if (savedState.captionMapData) {
+      setCaptionMap(new Map(Object.entries(savedState.captionMapData)));
+    }
+    if (savedState.specMapData) {
+      setSpecMap(new Map(Object.entries(savedState.specMapData)));
+    }
+    if (savedState.materialMapData && Object.keys(savedState.materialMapData).length > 0) {
+      setMaterialMap(new Map(Object.entries(savedState.materialMapData)));
+    }
+    if (savedState.releaseDateMapData && Object.keys(savedState.releaseDateMapData).length > 0) {
+      // Synthesize a ReleaseDateParseResult so the useMemo returns the saved map directly
+      setReleaseDateParseResult({
+        productDateMap: new Map(Object.entries(savedState.releaseDateMapData)),
+        weekDateMap: new Map(),
+        hasProductNos: true,
+        sheetNames: [],
+        detectedProductNos: [],
+        detectedWeekLabels: [],
+      });
+    }
     setStep('review');
   };
 
@@ -2861,6 +2950,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           />
           <ImportHistorySection
             history={importHistory}
+            savedState={savedState}
             onClear={() => {
               setImportHistory([]);
               saveImportHistoryToStorage([]);
@@ -2949,6 +3039,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           />
           <ImportHistorySection
             history={importHistory}
+            savedState={savedState}
             onClear={() => {
               setImportHistory([]);
               saveImportHistoryToStorage([]);
