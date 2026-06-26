@@ -1,0 +1,135 @@
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+.overlay {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  padding: 24px;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+
+.card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 36px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Logo area ───────────────────────────────────────────────────────────── */
+
+.logoArea {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: center;
+}
+
+.logoTitle {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.02em;
+}
+
+.logoDivider {
+  color: var(--color-border);
+  font-weight: 300;
+}
+
+.logoSub {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+/* ── Config error ────────────────────────────────────────────────────────── */
+
+.configError {
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  letter-spacing: 0.02em;
+}
+
+.input {
+  height: 38px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  background: #fff;
+}
+
+/* ── Error ───────────────────────────────────────────────────────────────── */
+
+.error {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid #f8c8c8;
+  border-radius: 7px;
+}
+
+/* ── Submit ──────────────────────────────────────────────────────────────── */
+
+.submitBtn {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 4px;
+  transition: opacity 0.15s;
+}
+
+.submitBtn:hover { opacity: 0.88; }
+.submitBtn:active { opacity: 0.75; }

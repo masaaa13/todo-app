@@ -83,6 +83,27 @@
   opacity: 0.55;
 }
 
+.logoutBtn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid #f8c8c8;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.logoutBtn:hover {
+  background: #fecaca;
+  border-color: var(--color-danger);
+}
+
 /* ── App body (sidebar + main) ───────────────────────────────────────────── */
 
 .appBody {

@@ -12,6 +12,7 @@ import { WishlistTab } from './components/WishlistTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
 import { ImportTab } from './components/ImportTab';
+import { LoginGate, loadAuth, clearAuth } from './components/LoginGate';
 import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
@@ -46,6 +47,7 @@ function App() {
   const { user } = useAuth();
   const { tasks, loading, error, addTask, toggleTask, deleteTask, editTask, clearCompleted } = useTasks(user);
 
+  const [loggedIn, setLoggedIn] = useState<boolean>(() => loadAuth() !== null);
   const [activeTab, setActiveTab] = useState<AppTab>('products');
   const [mdProducts, setMdProducts] = useState<MdProduct[]>([]);
   const [mdProductsSavedAt, setMdProductsSavedAt] = useState<string | null>(null);
@@ -73,6 +75,15 @@ function App() {
   const doneCount = tasks.filter((t) => t.completed).length;
   const displayTasks = applySearch(applyFilter(sortTasks(tasks, sortBy), filter), search);
 
+  if (!loggedIn) {
+    return <LoginGate onLogin={() => setLoggedIn(true)} />;
+  }
+
+  const handleLogout = () => {
+    clearAuth();
+    setLoggedIn(false);
+  };
+
   return (
     <div className={styles.appShell}>
 
@@ -87,6 +98,8 @@ function App() {
         <div className={styles.topBarRight}>
           <span className={styles.topBadge}>Local / Browser storage</span>
           <span className={`${styles.topBadge} ${styles.topBadgeDim}`}>Supabase disabled</span>
+          <span className={styles.topBadge}>Logged in</span>
+          <button className={styles.logoutBtn} onClick={handleLogout}>ログアウト</button>
         </div>
       </header>
 
