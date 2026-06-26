@@ -100,7 +100,7 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
     const cols = [
       v.productNo,
       v.productName,
-      v.skuCode,
+      v.skuCode.replaceAll('_', ''),
       v.color ?? '',
       v.size ?? '',
       v.category,
@@ -577,7 +577,7 @@ function VariationTablePanel({ variations, totalCount, hasVariations }: Variatio
                     <span className={styles.productName}>{v.productName}</span>
                   </td>
                   <td className={styles.td}>
-                    <span className={styles.skuCell}>{v.skuCode}</span>
+                    <span className={styles.skuCell}>{v.skuCode.replaceAll('_', '')}</span>
                   </td>
                   <td className={styles.td}>
                     <span className={styles.colorCell}>{v.color ?? '—'}</span>
@@ -692,7 +692,7 @@ export function ProductsTab({
     const kw = varKeyword.trim().toLowerCase();
     return variations.filter((v) => {
       if (kw) {
-        const hit = [v.productNo, v.productName, v.skuCode, v.color ?? '', v.size ?? '']
+        const hit = [v.productNo, v.productName, v.skuCode, v.skuCode.replaceAll('_', ''), v.color ?? '', v.size ?? '']
           .some((s) => s.toLowerCase().includes(kw));
         if (!hit) return false;
       }

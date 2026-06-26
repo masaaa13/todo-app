@@ -108,7 +108,7 @@ function exportCsv(items: WishlistItem[]) {
       it.priority,
       it.productNo,
       it.productName,
-      it.skuCode,
+      it.skuCode.replaceAll('_', ''),
       it.color ?? '',
       it.size ?? '',
       it.category,
@@ -364,7 +364,7 @@ export function WishlistTab({ variations }: Props) {
                       <td className={styles.td}><PriorityPill priority={item.priority} /></td>
                       <td className={styles.td}><span className={styles.productNo}>{item.productNo}</span></td>
                       <td className={styles.td}><span className={styles.productName}>{item.productName}</span></td>
-                      <td className={styles.td}><span className={styles.skuBadge}>{item.skuCode}</span></td>
+                      <td className={styles.td}><span className={styles.skuBadge}>{item.skuCode.replaceAll('_', '')}</span></td>
                       <td className={styles.td}><span className={styles.colorCell}>{item.color ?? '—'}</span></td>
                       <td className={styles.td}><span className={styles.sizeCell}>{item.size ?? '—'}</span></td>
                       <td className={styles.td}><span className={styles.categoryBadge}>{item.category}</span></td>
