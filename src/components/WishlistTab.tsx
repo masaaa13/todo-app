@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { MdProduct, MdVariation, WishlistItem } from '../types/md';
 import styles from './WishlistTab.module.css';
 
@@ -216,6 +216,8 @@ type ColumnSelectorProps = {
 
 function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
 
@@ -226,6 +228,13 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
     };
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setDraggingKey(null);
+      setDragOverKey(null);
+    }
   }, [open]);
 
   const moveUp = (idx: number) => {
@@ -240,6 +249,40 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
     const next = [...configs];
     [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
     onChange(next);
+  };
+
+  const handleDragStart = (e: React.DragEvent, key: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingKey(key);
+  };
+
+  const handleDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverKey(key);
+  };
+
+  const handleDrop = (e: React.DragEvent, toKey: string) => {
+    e.preventDefault();
+    if (!draggingKey || draggingKey === toKey) {
+      setDraggingKey(null);
+      setDragOverKey(null);
+      return;
+    }
+    const fromIdx = configs.findIndex((c) => c.key === draggingKey);
+    const toIdx = configs.findIndex((c) => c.key === toKey);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = [...configs];
+    const [removed] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, removed);
+    onChange(next);
+    setDraggingKey(null);
+    setDragOverKey(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingKey(null);
+    setDragOverKey(null);
   };
 
   return (
@@ -263,7 +306,18 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
               const col = colMap.get(config.key);
               if (!col) return null;
               return (
-                <div key={config.key} className={styles.colSelectorItem}>
+                <div
+                  key={config.key}
+                  className={styles.colSelectorItem}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, config.key)}
+                  onDragOver={(e) => handleDragOver(e, config.key)}
+                  onDrop={(e) => handleDrop(e, config.key)}
+                  onDragEnd={handleDragEnd}
+                  data-dragging={draggingKey === config.key || undefined}
+                  data-dragover={dragOverKey === config.key && draggingKey !== config.key || undefined}
+                >
+                  <span className={styles.dragHandle} title="ドラッグで並び替え">☰</span>
                   <input
                     type="checkbox"
                     className={styles.colSelectorCheck}
@@ -337,6 +391,11 @@ export function WishlistTab({ variations }: Props) {
   );
   const [resetKey, setResetKey] = useState(0);
 
+  // Resize state
+  const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const dragWidthRef = useRef(0);
+
   const handleChange = (newConfigs: ColumnConfig[]) => {
     setConfigs(newConfigs);
     saveColumnConfig(WISHLIST_STORAGE_KEY, newConfigs);
@@ -352,6 +411,52 @@ export function WishlistTab({ variations }: Props) {
     setResetKey((k) => k + 1);
   };
 
+  const handleWidthChange = useCallback((key: string, width: number) => {
+    setConfigs((prev) => {
+      const next = prev.map((c) => c.key === key ? { ...c, width } : c);
+      saveColumnConfig(WISHLIST_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const startResize = (e: React.MouseEvent, key: string, currentWidth: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
+    dragWidthRef.current = currentWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = ev.clientX - resizingRef.current.startX;
+      const w = Math.min(500, Math.max(50, resizingRef.current.startWidth + delta));
+      dragWidthRef.current = w;
+      setLocalWidths((prev) => ({ ...prev, [resizingRef.current!.key]: w }));
+    };
+
+    const onMouseUp = () => {
+      const key = resizingRef.current?.key;
+      const finalWidth = dragWidthRef.current;
+      if (key) {
+        handleWidthChange(key, finalWidth);
+        setLocalWidths((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+      resizingRef.current = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
   const colMap = useMemo(() => new Map(WISHLIST_COLUMNS.map((c) => [c.key, c])), []);
 
   const visibleCols = useMemo(() =>
@@ -365,7 +470,7 @@ export function WishlistTab({ variations }: Props) {
   );
 
   const getWidth = (config: ColumnConfig, col: TableColumn<WishlistItem>) =>
-    config.width ?? col.defaultWidth ?? 100;
+    localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
 
   const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
 
@@ -593,9 +698,18 @@ export function WishlistTab({ variations }: Props) {
                 </colgroup>
                 <thead>
                   <tr>
-                    {visibleCols.map(({ config, col }) => (
-                      <th key={config.key} className={styles.th}>{col.label}</th>
-                    ))}
+                    {visibleCols.map(({ config, col }) => {
+                      const w = getWidth(config, col);
+                      return (
+                        <th key={config.key} className={styles.th}>
+                          <span className={styles.thLabel}>{col.label}</span>
+                          <span
+                            className={styles.resizeHandle}
+                            onMouseDown={(e) => startResize(e, config.key, w)}
+                          />
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>

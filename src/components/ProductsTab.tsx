@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { MdProduct, MdVariation } from '../types/md';
 import styles from './ProductsTab.module.css';
 
@@ -170,12 +170,10 @@ function loadColumnConfig(
           return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
         }
         if (typeof parsed[0] === 'string') {
-          // Backward compat: old format was string[] of visible keys
           const visibleSet = new Set(parsed as string[]);
           return columns.map((c) => ({ key: c.key, visible: visibleSet.has(c.key) }));
         }
         if (parsed[0] != null && typeof parsed[0] === 'object' && 'key' in (parsed[0] as object)) {
-          // New format: ColumnConfig[]
           const saved = parsed as ColumnConfig[];
           const savedKeys = new Set(saved.map((c) => c.key));
           const missing = columns
@@ -494,6 +492,8 @@ type ColumnSelectorProps = {
 
 function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
 
@@ -504,6 +504,13 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
     };
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setDraggingKey(null);
+      setDragOverKey(null);
+    }
   }, [open]);
 
   const moveUp = (idx: number) => {
@@ -518,6 +525,40 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
     const next = [...configs];
     [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
     onChange(next);
+  };
+
+  const handleDragStart = (e: React.DragEvent, key: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingKey(key);
+  };
+
+  const handleDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverKey(key);
+  };
+
+  const handleDrop = (e: React.DragEvent, toKey: string) => {
+    e.preventDefault();
+    if (!draggingKey || draggingKey === toKey) {
+      setDraggingKey(null);
+      setDragOverKey(null);
+      return;
+    }
+    const fromIdx = configs.findIndex((c) => c.key === draggingKey);
+    const toIdx = configs.findIndex((c) => c.key === toKey);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = [...configs];
+    const [removed] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, removed);
+    onChange(next);
+    setDraggingKey(null);
+    setDragOverKey(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingKey(null);
+    setDragOverKey(null);
   };
 
   return (
@@ -541,7 +582,18 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
               const col = colMap.get(config.key);
               if (!col) return null;
               return (
-                <div key={config.key} className={styles.colSelectorItem}>
+                <div
+                  key={config.key}
+                  className={styles.colSelectorItem}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, config.key)}
+                  onDragOver={(e) => handleDragOver(e, config.key)}
+                  onDrop={(e) => handleDrop(e, config.key)}
+                  onDragEnd={handleDragEnd}
+                  data-dragging={draggingKey === config.key || undefined}
+                  data-dragover={dragOverKey === config.key && draggingKey !== config.key || undefined}
+                >
+                  <span className={styles.dragHandle} title="ドラッグで並び替え">☰</span>
                   <input
                     type="checkbox"
                     className={styles.colSelectorCheck}
@@ -629,10 +681,14 @@ type ProductTablePanelProps = {
   savedAt: string | null;
   configs: ColumnConfig[];
   columns: TableColumn<MdProduct>[];
+  onWidthChange: (key: string, width: number) => void;
 };
 
-function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns }: ProductTablePanelProps) {
+function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns, onWidthChange }: ProductTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
+  const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const dragWidthRef = useRef(0);
 
   const visibleCols = useMemo(() =>
     configs
@@ -645,7 +701,45 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
   );
 
   const getWidth = (config: ColumnConfig, col: TableColumn<MdProduct>) =>
-    config.width ?? col.defaultWidth ?? 100;
+    localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
+
+  const startResize = (e: React.MouseEvent, key: string, currentWidth: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
+    dragWidthRef.current = currentWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = ev.clientX - resizingRef.current.startX;
+      const w = Math.min(500, Math.max(50, resizingRef.current.startWidth + delta));
+      dragWidthRef.current = w;
+      setLocalWidths((prev) => ({ ...prev, [resizingRef.current!.key]: w }));
+    };
+
+    const onMouseUp = () => {
+      const key = resizingRef.current?.key;
+      const finalWidth = dragWidthRef.current;
+      if (key) {
+        onWidthChange(key, finalWidth);
+        setLocalWidths((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+      resizingRef.current = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   const noticeText = !isReal
     ? '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'
@@ -676,9 +770,18 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
           </colgroup>
           <thead>
             <tr>
-              {visibleCols.map(({ config, col }) => (
-                <th key={config.key} className={styles.th}>{col.label}</th>
-              ))}
+              {visibleCols.map(({ config, col }) => {
+                const w = getWidth(config, col);
+                return (
+                  <th key={config.key} className={styles.th}>
+                    <span className={styles.thLabel}>{col.label}</span>
+                    <span
+                      className={styles.resizeHandle}
+                      onMouseDown={(e) => startResize(e, config.key, w)}
+                    />
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -710,10 +813,14 @@ type VariationTablePanelProps = {
   hasVariations: boolean;
   configs: ColumnConfig[];
   columns: TableColumn<MdVariation>[];
+  onWidthChange: (key: string, width: number) => void;
 };
 
-function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns }: VariationTablePanelProps) {
+function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns, onWidthChange }: VariationTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
+  const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const dragWidthRef = useRef(0);
 
   const visibleCols = useMemo(() =>
     configs
@@ -726,7 +833,45 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
   );
 
   const getWidth = (config: ColumnConfig, col: TableColumn<MdVariation>) =>
-    config.width ?? col.defaultWidth ?? 100;
+    localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
+
+  const startResize = (e: React.MouseEvent, key: string, currentWidth: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
+    dragWidthRef.current = currentWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = ev.clientX - resizingRef.current.startX;
+      const w = Math.min(500, Math.max(50, resizingRef.current.startWidth + delta));
+      dragWidthRef.current = w;
+      setLocalWidths((prev) => ({ ...prev, [resizingRef.current!.key]: w }));
+    };
+
+    const onMouseUp = () => {
+      const key = resizingRef.current?.key;
+      const finalWidth = dragWidthRef.current;
+      if (key) {
+        onWidthChange(key, finalWidth);
+        setLocalWidths((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+      resizingRef.current = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   if (!hasVariations) {
     return (
@@ -761,9 +906,18 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
           </colgroup>
           <thead>
             <tr>
-              {visibleCols.map(({ config, col }) => (
-                <th key={config.key} className={styles.th}>{col.label}</th>
-              ))}
+              {visibleCols.map(({ config, col }) => {
+                const w = getWidth(config, col);
+                return (
+                  <th key={config.key} className={styles.th}>
+                    <span className={styles.thLabel}>{col.label}</span>
+                    <span
+                      className={styles.resizeHandle}
+                      onMouseDown={(e) => startResize(e, config.key, w)}
+                    />
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -857,6 +1011,23 @@ export function ProductsTab({
     setVariationConfigs(newConfigs);
     saveColumnConfig(VARIATION_STORAGE_KEY, newConfigs);
   };
+
+  // Width change from resize handle
+  const handleProductWidthChange = useCallback((key: string, width: number) => {
+    setProductConfigs((prev) => {
+      const next = prev.map((c) => c.key === key ? { ...c, width } : c);
+      saveColumnConfig(PRODUCT_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const handleVariationWidthChange = useCallback((key: string, width: number) => {
+    setVariationConfigs((prev) => {
+      const next = prev.map((c) => c.key === key ? { ...c, width } : c);
+      saveColumnConfig(VARIATION_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
 
   const showAllProduct = () => handleProductChange(productConfigs.map((c) => ({ ...c, visible: true })));
   const resetProduct = () => {
@@ -986,6 +1157,7 @@ export function ProductsTab({
               savedAt={savedAt}
               configs={productConfigs}
               columns={PRODUCT_COLUMNS}
+              onWidthChange={handleProductWidthChange}
             />
           </div>
           <NextPhaseCard />
@@ -1012,6 +1184,7 @@ export function ProductsTab({
               hasVariations={hasVariations}
               configs={variationConfigs}
               columns={VARIATION_COLUMNS}
+              onWidthChange={handleVariationWidthChange}
             />
           </div>
         </>

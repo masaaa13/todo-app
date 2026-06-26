@@ -416,7 +416,7 @@
 
 .th {
   text-align: left;
-  padding: 7px 10px;
+  padding: 0;
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--color-text-sub);
@@ -425,6 +425,36 @@
   white-space: nowrap;
   position: sticky;
   top: 0;
+  overflow: hidden;
+}
+
+.thLabel {
+  display: inline-block;
+  padding: 7px 14px 7px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  border-right: 2px solid var(--color-border);
+  transition: background 0.12s, border-color 0.12s;
+  z-index: 1;
+}
+
+.resizeHandle:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-right-color: var(--color-accent);
 }
 
 .th:first-child { border-radius: 6px 0 0 0; }
@@ -730,6 +760,30 @@
   accent-color: var(--color-accent);
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.dragHandle {
+  font-size: 0.72rem;
+  color: var(--color-text-sub);
+  cursor: grab;
+  flex-shrink: 0;
+  opacity: 0.45;
+  user-select: none;
+  padding: 0 1px;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.colSelectorItem[data-dragging] {
+  opacity: 0.35;
+}
+
+.colSelectorItem[data-dragover] {
+  background: #eff6ff;
+  outline: 1.5px dashed #93c5fd;
+  border-radius: 5px;
 }
 
 .colSelectorLabel {
