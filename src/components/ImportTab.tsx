@@ -2201,6 +2201,20 @@ function countUniqueProducts(rows: ReviewRow[], colMap: ColMap): number {
   return nos.size;
 }
 
+// Count valid SKU rows: same filter as reviewRowsToMdVariations
+// (productNo exists + not excluded + skuCode exists)
+function countValidSkus(rows: ReviewRow[], colMap: ColMap): number {
+  let count = 0;
+  for (const r of rows) {
+    const productNo = r.productNo || rv(r.rawData, colMap.productNo);
+    if (!productNo || isExcludedProductNo(productNo)) continue;
+    const skuCode = r.skuNo || rv(r.rawData, colMap.skuNo);
+    if (!skuCode) continue;
+    count++;
+  }
+  return count;
+}
+
 function reviewRowsToHistorySkuRows(rows: ReviewRow[], colMap: ColMap): ImportHistorySkuRow[] {
   return rows.map((r) => ({
     productNo: r.productNo || rv(r.rawData, colMap.productNo),
@@ -2664,7 +2678,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   };
 
   const commitToReview = (rows: ReviewRow[], map: ColMap, fname: string) => {
-    const skuCount = rows.length;
+    const skuCount = countValidSkus(rows, map);
     const productCount = countUniqueProducts(rows, map);
     const state: ImportSavedState = {
       filename: fname,
@@ -2880,7 +2894,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           <PageHeaderCard />
           <FileIntakeCard
             skuFilename={filename}
-            skuCount={reviewRows.length}
+            skuCount={countValidSkus(reviewRows, colMap)}
             captionFilename={captionFilename}
             specFilename={specFilename}
             materialFilename={materialFilename}
