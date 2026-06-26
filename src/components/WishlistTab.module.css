@@ -356,10 +356,9 @@
 }
 
 .table {
-  width: 100%;
   border-collapse: collapse;
   font-size: 0.81rem;
-  min-width: 900px;
+  table-layout: fixed;
 }
 
 .th {
@@ -390,6 +389,7 @@
 .td {
   padding: 9px 10px;
   vertical-align: middle;
+  overflow: hidden;
 }
 
 /* Priority pill */
@@ -600,7 +600,7 @@
   border: 1.5px solid var(--color-border);
   border-radius: 10px;
   padding: 10px;
-  min-width: 160px;
+  min-width: 340px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
   display: flex;
   flex-direction: column;
@@ -609,7 +609,8 @@
 
 .colSelectorActions {
   display: flex;
-  gap: 6px;
+  gap: 5px;
+  flex-wrap: wrap;
 }
 
 .colSelectorAction {
@@ -638,11 +639,8 @@
 .colSelectorItem {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 5px;
-  font-size: 0.76rem;
-  color: var(--color-text);
-  cursor: pointer;
+  gap: 6px;
+  padding: 3px 5px;
   border-radius: 5px;
   transition: background 0.1s;
 }
@@ -656,3 +654,61 @@
   cursor: pointer;
   flex-shrink: 0;
 }
+
+.colSelectorLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colWidthLabel {
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+  flex-shrink: 0;
+}
+
+.colWidthInput {
+  width: 50px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 0.72rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  text-align: right;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.colWidthInput:focus { border-color: var(--color-accent); }
+
+.colWidthUnit {
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+  flex-shrink: 0;
+}
+
+.colMoveBtn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+
+.colMoveBtn:hover:not(:disabled) { background: #e5e7eb; color: var(--color-text); }
+.colMoveBtn:disabled { opacity: 0.28; cursor: not-allowed; }

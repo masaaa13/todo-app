@@ -2,14 +2,25 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import type { MdProduct, MdVariation } from '../types/md';
 import styles from './ProductsTab.module.css';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type ViewMode = 'product' | 'variation';
+
+type ColumnConfig = {
+  key: string;
+  visible: boolean;
+  width?: number;
+};
 
 type TableColumn<T> = {
   key: string;
   label: string;
   defaultVisible: boolean;
+  defaultWidth?: number;
   render: (row: T) => React.ReactNode;
 };
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const PRODUCT_STORAGE_KEY = 'ecTodo.productsColumns.product';
 const VARIATION_STORAGE_KEY = 'ecTodo.productsColumns.variation';
@@ -144,21 +155,46 @@ function formatSavedAt(iso: string): string {
   return `${y}/${mo}/${day} ${h}:${min}`;
 }
 
-// ── Column visibility helpers ─────────────────────────────────────────────────
+// ── Column config helpers ─────────────────────────────────────────────────────
 
-function loadVisible(
+function loadColumnConfig(
   columns: { key: string; defaultVisible: boolean }[],
   storageKey: string,
-): Set<string> {
+): ColumnConfig[] {
   try {
     const raw = localStorage.getItem(storageKey);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0) {
+          return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
+        }
+        if (typeof parsed[0] === 'string') {
+          // Backward compat: old format was string[] of visible keys
+          const visibleSet = new Set(parsed as string[]);
+          return columns.map((c) => ({ key: c.key, visible: visibleSet.has(c.key) }));
+        }
+        if (parsed[0] != null && typeof parsed[0] === 'object' && 'key' in (parsed[0] as object)) {
+          // New format: ColumnConfig[]
+          const saved = parsed as ColumnConfig[];
+          const savedKeys = new Set(saved.map((c) => c.key));
+          const missing = columns
+            .filter((c) => !savedKeys.has(c.key))
+            .map((c) => ({ key: c.key, visible: c.defaultVisible }));
+          return [...saved, ...missing];
+        }
+      }
+    }
   } catch {}
-  return new Set(columns.filter((c) => c.defaultVisible).map((c) => c.key));
+  return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
 }
 
-function saveVisible(storageKey: string, visible: Set<string>): void {
-  try { localStorage.setItem(storageKey, JSON.stringify([...visible])); } catch {}
+function saveColumnConfig(storageKey: string, configs: ColumnConfig[]): void {
+  try { localStorage.setItem(storageKey, JSON.stringify(configs)); } catch {}
+}
+
+function defaultColumnConfigs(columns: { key: string; defaultVisible: boolean }[]): ColumnConfig[] {
+  return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -447,16 +483,19 @@ function ActionPill({ action }: { action: string }) {
 // ── Column selector ───────────────────────────────────────────────────────────
 
 type ColumnSelectorProps = {
-  columns: { key: string; label: string }[];
-  visible: Set<string>;
-  onToggle: (key: string, v: boolean) => void;
+  configs: ColumnConfig[];
+  columns: { key: string; label: string; defaultWidth?: number }[];
+  onChange: (configs: ColumnConfig[]) => void;
   onShowAll: () => void;
   onReset: () => void;
+  onResetWidths: () => void;
+  resetKey: number;
 };
 
-function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: ColumnSelectorProps) {
+function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
 
   useEffect(() => {
     if (!open) return;
@@ -466,6 +505,20 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
+
+  const moveUp = (idx: number) => {
+    if (idx === 0) return;
+    const next = [...configs];
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    onChange(next);
+  };
+
+  const moveDown = (idx: number) => {
+    if (idx === configs.length - 1) return;
+    const next = [...configs];
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    onChange(next);
+  };
 
   return (
     <div className={styles.colSelectorWrap} ref={wrapRef}>
@@ -481,19 +534,54 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
           <div className={styles.colSelectorActions}>
             <button className={styles.colSelectorAction} onClick={onShowAll}>すべて表示</button>
             <button className={styles.colSelectorAction} onClick={onReset}>初期表示に戻す</button>
+            <button className={styles.colSelectorAction} onClick={onResetWidths}>幅を初期値に戻す</button>
           </div>
           <div className={styles.colSelectorList}>
-            {columns.map((col) => (
-              <label key={col.key} className={styles.colSelectorItem}>
-                <input
-                  type="checkbox"
-                  className={styles.colSelectorCheck}
-                  checked={visible.has(col.key)}
-                  onChange={(e) => onToggle(col.key, e.target.checked)}
-                />
-                {col.label}
-              </label>
-            ))}
+            {configs.map((config, idx) => {
+              const col = colMap.get(config.key);
+              if (!col) return null;
+              return (
+                <div key={config.key} className={styles.colSelectorItem}>
+                  <input
+                    type="checkbox"
+                    className={styles.colSelectorCheck}
+                    checked={config.visible}
+                    onChange={(e) =>
+                      onChange(configs.map((c) => c.key === config.key ? { ...c, visible: e.target.checked } : c))
+                    }
+                  />
+                  <span className={styles.colSelectorLabel}>{col.label}</span>
+                  <span className={styles.colWidthLabel}>幅</span>
+                  <input
+                    type="number"
+                    className={styles.colWidthInput}
+                    key={`w-${config.key}-${resetKey}`}
+                    defaultValue={config.width ?? ''}
+                    placeholder={String(col.defaultWidth ?? 100)}
+                    min="40"
+                    max="800"
+                    onBlur={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      const width = Number.isFinite(n) && n >= 40 ? n : undefined;
+                      onChange(configs.map((c) => c.key === config.key ? { ...c, width } : c));
+                    }}
+                  />
+                  <span className={styles.colWidthUnit}>px</span>
+                  <button
+                    className={styles.colMoveBtn}
+                    onClick={() => moveUp(idx)}
+                    disabled={idx === 0}
+                    title="上へ移動"
+                  >↑</button>
+                  <button
+                    className={styles.colMoveBtn}
+                    onClick={() => moveDown(idx)}
+                    disabled={idx === configs.length - 1}
+                    title="下へ移動"
+                  >↓</button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -504,32 +592,32 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
-  { key: 'productNo',       label: '品番',       defaultVisible: true,  render: (p) => <span className={styles.productNo}>{p.productNo}</span> },
-  { key: 'productName',     label: '商品名',     defaultVisible: true,  render: (p) => <span className={styles.productName}>{p.productName}</span> },
-  { key: 'category',        label: 'カテゴリ',   defaultVisible: true,  render: (p) => <span className={styles.categoryBadge}>{p.category}</span> },
-  { key: 'releaseDate',     label: '発売日',     defaultVisible: true,  render: (p) => <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span> },
-  { key: 'skuCount',        label: 'SKU数',      defaultVisible: true,  render: (p) => <span className={styles.numCell}>{p.skuCount ?? '—'}</span> },
-  { key: 'ecStock',         label: 'EC在庫',     defaultVisible: true,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'recentSales',     label: '直近売上',   defaultVisible: true,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'sellThroughRate', label: '消化率',     defaultVisible: true,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'status',          label: 'ステータス', defaultVisible: true,  render: (p) => <StatusPill status={p.status} /> },
-  { key: 'nextAction',      label: '次アクション', defaultVisible: true, render: (p) => <ActionPill action={p.nextAction} /> },
-  { key: 'image',           label: '画像',       defaultVisible: false, render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'productNo',       label: '品番',         defaultVisible: true,  defaultWidth: 90,  render: (p) => <span className={styles.productNo}>{p.productNo}</span> },
+  { key: 'productName',     label: '商品名',       defaultVisible: true,  defaultWidth: 220, render: (p) => <span className={styles.productName}>{p.productName}</span> },
+  { key: 'category',        label: 'カテゴリ',     defaultVisible: true,  defaultWidth: 130, render: (p) => <span className={styles.categoryBadge}>{p.category}</span> },
+  { key: 'releaseDate',     label: '発売日',       defaultVisible: true,  defaultWidth: 110, render: (p) => <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span> },
+  { key: 'skuCount',        label: 'SKU数',        defaultVisible: true,  defaultWidth: 80,  render: (p) => <span className={styles.numCell}>{p.skuCount ?? '—'}</span> },
+  { key: 'ecStock',         label: 'EC在庫',       defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'recentSales',     label: '直近売上',     defaultVisible: true,  defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'sellThroughRate', label: '消化率',       defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'status',          label: 'ステータス',   defaultVisible: true,  defaultWidth: 120, render: (p) => <StatusPill status={p.status} /> },
+  { key: 'nextAction',      label: '次アクション', defaultVisible: true,  defaultWidth: 180, render: (p) => <ActionPill action={p.nextAction} /> },
+  { key: 'image',           label: '画像',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
 ];
 
 const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
-  { key: 'productNo',       label: '品番',       defaultVisible: true,  render: (v) => <span className={styles.productNo}>{v.productNo}</span> },
-  { key: 'productName',     label: '商品名',     defaultVisible: true,  render: (v) => <span className={styles.productName}>{v.productName}</span> },
-  { key: 'skuCode',         label: 'SKU',        defaultVisible: true,  render: (v) => <span className={styles.skuCell}>{v.skuCode.replaceAll('_', '')}</span> },
-  { key: 'color',           label: 'カラー',     defaultVisible: true,  render: (v) => <span className={styles.colorCell}>{v.color ?? '—'}</span> },
-  { key: 'size',            label: 'サイズ',     defaultVisible: true,  render: (v) => <span className={styles.sizeCell}>{v.size ?? '—'}</span> },
-  { key: 'category',        label: 'カテゴリ',   defaultVisible: true,  render: (v) => <span className={styles.categoryBadge}>{v.category}</span> },
-  { key: 'releaseDate',     label: '発売日',     defaultVisible: true,  render: (v) => <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span> },
-  { key: 'ecStock',         label: 'EC在庫',     defaultVisible: false, render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'recentSales',     label: '直近売上',   defaultVisible: false, render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'sellThroughRate', label: '消化率',     defaultVisible: false, render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'status',          label: 'ステータス', defaultVisible: true,  render: (v) => <StatusPill status={v.status} /> },
-  { key: 'nextAction',      label: '次アクション', defaultVisible: false, render: (v) => <ActionPill action={v.nextAction} /> },
+  { key: 'productNo',       label: '品番',         defaultVisible: true,  defaultWidth: 90,  render: (v) => <span className={styles.productNo}>{v.productNo}</span> },
+  { key: 'productName',     label: '商品名',       defaultVisible: true,  defaultWidth: 220, render: (v) => <span className={styles.productName}>{v.productName}</span> },
+  { key: 'skuCode',         label: 'SKU',          defaultVisible: true,  defaultWidth: 120, render: (v) => <span className={styles.skuCell}>{v.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',           label: 'カラー',       defaultVisible: true,  defaultWidth: 120, render: (v) => <span className={styles.colorCell}>{v.color ?? '—'}</span> },
+  { key: 'size',            label: 'サイズ',       defaultVisible: true,  defaultWidth: 80,  render: (v) => <span className={styles.sizeCell}>{v.size ?? '—'}</span> },
+  { key: 'category',        label: 'カテゴリ',     defaultVisible: true,  defaultWidth: 130, render: (v) => <span className={styles.categoryBadge}>{v.category}</span> },
+  { key: 'releaseDate',     label: '発売日',       defaultVisible: true,  defaultWidth: 110, render: (v) => <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span> },
+  { key: 'ecStock',         label: 'EC在庫',       defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'recentSales',     label: '直近売上',     defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'sellThroughRate', label: '消化率',       defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'status',          label: 'ステータス',   defaultVisible: true,  defaultWidth: 120, render: (v) => <StatusPill status={v.status} /> },
+  { key: 'nextAction',      label: '次アクション', defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction} /> },
 ];
 
 // ── Table panels ──────────────────────────────────────────────────────────────
@@ -539,10 +627,26 @@ type ProductTablePanelProps = {
   totalCount: number;
   isReal: boolean;
   savedAt: string | null;
+  configs: ColumnConfig[];
   columns: TableColumn<MdProduct>[];
 };
 
-function ProductTablePanel({ products, totalCount, isReal, savedAt, columns }: ProductTablePanelProps) {
+function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns }: ProductTablePanelProps) {
+  const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
+
+  const visibleCols = useMemo(() =>
+    configs
+      .filter((c) => c.visible)
+      .flatMap((c) => {
+        const col = colMap.get(c.key);
+        return col ? [{ config: c, col }] : [];
+      }),
+    [configs, colMap]
+  );
+
+  const getWidth = (config: ColumnConfig, col: TableColumn<MdProduct>) =>
+    config.width ?? col.defaultWidth ?? 100;
+
   const noticeText = !isReal
     ? '現在はMDツール化に向けたサンプル表示です。実データ連携は次フェーズで実装予定です。'
     : savedAt
@@ -565,23 +669,30 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, columns }: P
       </div>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
+          <colgroup>
+            {visibleCols.map(({ config, col }) => (
+              <col key={config.key} style={{ width: getWidth(config, col) }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              {columns.map((col) => (
-                <th key={col.key} className={styles.th}>{col.label}</th>
+              {visibleCols.map(({ config, col }) => (
+                <th key={config.key} className={styles.th}>{col.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {products.length === 0 ? (
               <tr>
-                <td className={styles.emptyCell} colSpan={columns.length}>該当する商品がありません</td>
+                <td className={styles.emptyCell} colSpan={Math.max(visibleCols.length, 1)}>
+                  該当する商品がありません
+                </td>
               </tr>
             ) : (
               products.map((p) => (
                 <tr key={p.productNo} className={styles.tr}>
-                  {columns.map((col) => (
-                    <td key={col.key} className={styles.td}>{col.render(p)}</td>
+                  {visibleCols.map(({ config, col }) => (
+                    <td key={config.key} className={styles.td}>{col.render(p)}</td>
                   ))}
                 </tr>
               ))
@@ -597,10 +708,26 @@ type VariationTablePanelProps = {
   variations: MdVariation[];
   totalCount: number;
   hasVariations: boolean;
+  configs: ColumnConfig[];
   columns: TableColumn<MdVariation>[];
 };
 
-function VariationTablePanel({ variations, totalCount, hasVariations, columns }: VariationTablePanelProps) {
+function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns }: VariationTablePanelProps) {
+  const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
+
+  const visibleCols = useMemo(() =>
+    configs
+      .filter((c) => c.visible)
+      .flatMap((c) => {
+        const col = colMap.get(c.key);
+        return col ? [{ config: c, col }] : [];
+      }),
+    [configs, colMap]
+  );
+
+  const getWidth = (config: ColumnConfig, col: TableColumn<MdVariation>) =>
+    config.width ?? col.defaultWidth ?? 100;
+
   if (!hasVariations) {
     return (
       <div className={styles.tablePanel}>
@@ -627,23 +754,30 @@ function VariationTablePanel({ variations, totalCount, hasVariations, columns }:
       </div>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
+          <colgroup>
+            {visibleCols.map(({ config, col }) => (
+              <col key={config.key} style={{ width: getWidth(config, col) }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              {columns.map((col) => (
-                <th key={col.key} className={styles.th}>{col.label}</th>
+              {visibleCols.map(({ config, col }) => (
+                <th key={config.key} className={styles.th}>{col.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {variations.length === 0 ? (
               <tr>
-                <td className={styles.emptyCell} colSpan={columns.length}>該当するバリエーションがありません</td>
+                <td className={styles.emptyCell} colSpan={Math.max(visibleCols.length, 1)}>
+                  該当するバリエーションがありません
+                </td>
               </tr>
             ) : (
               variations.map((v, i) => (
                 <tr key={`${v.skuCode}-${i}`} className={styles.tr}>
-                  {columns.map((col) => (
-                    <td key={col.key} className={styles.td}>{col.render(v)}</td>
+                  {visibleCols.map(({ config, col }) => (
+                    <td key={config.key} className={styles.td}>{col.render(v)}</td>
                   ))}
                 </tr>
               ))
@@ -705,50 +839,43 @@ export function ProductsTab({
   const [varCategory, setVarCategory] = useState('');
   const [varStatus, setVarStatus] = useState('');
 
-  // Column visibility
-  const [productVisible, setProductVisible] = useState<Set<string>>(() =>
-    loadVisible(PRODUCT_COLUMNS, PRODUCT_STORAGE_KEY)
+  // Column configs
+  const [productConfigs, setProductConfigs] = useState<ColumnConfig[]>(() =>
+    loadColumnConfig(PRODUCT_COLUMNS, PRODUCT_STORAGE_KEY)
   );
-  const [variationVisible, setVariationVisible] = useState<Set<string>>(() =>
-    loadVisible(VARIATION_COLUMNS, VARIATION_STORAGE_KEY)
+  const [variationConfigs, setVariationConfigs] = useState<ColumnConfig[]>(() =>
+    loadColumnConfig(VARIATION_COLUMNS, VARIATION_STORAGE_KEY)
   );
+  const [productResetKey, setProductResetKey] = useState(0);
+  const [variationResetKey, setVariationResetKey] = useState(0);
 
-  const toggleProduct = (key: string, show: boolean) =>
-    setProductVisible((prev) => {
-      const next = new Set(prev);
-      if (show) next.add(key); else next.delete(key);
-      saveVisible(PRODUCT_STORAGE_KEY, next);
-      return next;
-    });
-
-  const toggleVariation = (key: string, show: boolean) =>
-    setVariationVisible((prev) => {
-      const next = new Set(prev);
-      if (show) next.add(key); else next.delete(key);
-      saveVisible(VARIATION_STORAGE_KEY, next);
-      return next;
-    });
-
-  const showAllProduct = () => {
-    const all = new Set(PRODUCT_COLUMNS.map((c) => c.key));
-    setProductVisible(all);
-    saveVisible(PRODUCT_STORAGE_KEY, all);
+  const handleProductChange = (newConfigs: ColumnConfig[]) => {
+    setProductConfigs(newConfigs);
+    saveColumnConfig(PRODUCT_STORAGE_KEY, newConfigs);
   };
+  const handleVariationChange = (newConfigs: ColumnConfig[]) => {
+    setVariationConfigs(newConfigs);
+    saveColumnConfig(VARIATION_STORAGE_KEY, newConfigs);
+  };
+
+  const showAllProduct = () => handleProductChange(productConfigs.map((c) => ({ ...c, visible: true })));
   const resetProduct = () => {
-    const defaults = new Set(PRODUCT_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
-    setProductVisible(defaults);
-    saveVisible(PRODUCT_STORAGE_KEY, defaults);
+    handleProductChange(defaultColumnConfigs(PRODUCT_COLUMNS));
+    setProductResetKey((k) => k + 1);
+  };
+  const resetProductWidths = () => {
+    handleProductChange(productConfigs.map((c) => ({ ...c, width: undefined })));
+    setProductResetKey((k) => k + 1);
   };
 
-  const showAllVariation = () => {
-    const all = new Set(VARIATION_COLUMNS.map((c) => c.key));
-    setVariationVisible(all);
-    saveVisible(VARIATION_STORAGE_KEY, all);
-  };
+  const showAllVariation = () => handleVariationChange(variationConfigs.map((c) => ({ ...c, visible: true })));
   const resetVariation = () => {
-    const defaults = new Set(VARIATION_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
-    setVariationVisible(defaults);
-    saveVisible(VARIATION_STORAGE_KEY, defaults);
+    handleVariationChange(defaultColumnConfigs(VARIATION_COLUMNS));
+    setVariationResetKey((k) => k + 1);
+  };
+  const resetVariationWidths = () => {
+    handleVariationChange(variationConfigs.map((c) => ({ ...c, width: undefined })));
+    setVariationResetKey((k) => k + 1);
   };
 
   const isReal = products.length > 0;
@@ -795,9 +922,6 @@ export function ProductsTab({
     });
   }, [variations, varKeyword, varCategory, varStatus]);
 
-  const visibleProductCols = PRODUCT_COLUMNS.filter((c) => productVisible.has(c.key));
-  const visibleVariationCols = VARIATION_COLUMNS.filter((c) => variationVisible.has(c.key));
-
   const productCsvNote = isReal
     ? filtered.length !== activeData.length
       ? `表示中${filtered.length}件 / 全${activeData.length}件`
@@ -829,11 +953,13 @@ export function ProductsTab({
       <div className={styles.viewControlRow}>
         <ViewToggle viewMode={viewMode} onChangeMode={setViewMode} />
         <ColumnSelector
+          configs={viewMode === 'product' ? productConfigs : variationConfigs}
           columns={viewMode === 'product' ? PRODUCT_COLUMNS : VARIATION_COLUMNS}
-          visible={viewMode === 'product' ? productVisible : variationVisible}
-          onToggle={viewMode === 'product' ? toggleProduct : toggleVariation}
+          onChange={viewMode === 'product' ? handleProductChange : handleVariationChange}
           onShowAll={viewMode === 'product' ? showAllProduct : showAllVariation}
           onReset={viewMode === 'product' ? resetProduct : resetVariation}
+          onResetWidths={viewMode === 'product' ? resetProductWidths : resetVariationWidths}
+          resetKey={viewMode === 'product' ? productResetKey : variationResetKey}
         />
       </div>
 
@@ -858,7 +984,8 @@ export function ProductsTab({
               totalCount={activeData.length}
               isReal={isReal}
               savedAt={savedAt}
-              columns={visibleProductCols}
+              configs={productConfigs}
+              columns={PRODUCT_COLUMNS}
             />
           </div>
           <NextPhaseCard />
@@ -883,7 +1010,8 @@ export function ProductsTab({
               variations={filteredVariations}
               totalCount={variations.length}
               hasVariations={hasVariations}
-              columns={visibleVariationCols}
+              configs={variationConfigs}
+              columns={VARIATION_COLUMNS}
             />
           </div>
         </>

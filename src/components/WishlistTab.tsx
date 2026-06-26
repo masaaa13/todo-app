@@ -18,12 +18,23 @@ type Conditions = {
   limit: string;
 };
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type ColumnConfig = {
+  key: string;
+  visible: boolean;
+  width?: number;
+};
+
 type TableColumn<T> = {
   key: string;
   label: string;
   defaultVisible: boolean;
+  defaultWidth?: number;
   render: (row: T) => React.ReactNode;
 };
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const WISHLIST_STORAGE_KEY = 'ecTodo.wishlistColumns';
 
@@ -37,6 +48,8 @@ const DEFAULT_CONDITIONS: Conditions = {
   excludeNos: '',
   limit: '',
 };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
   return variations.map((v) => {
@@ -138,21 +151,44 @@ function exportCsv(items: WishlistItem[]) {
   URL.revokeObjectURL(url);
 }
 
-// ── Column visibility helpers ─────────────────────────────────────────────────
+// ── Column config helpers ─────────────────────────────────────────────────────
 
-function loadVisible(
+function loadColumnConfig(
   columns: { key: string; defaultVisible: boolean }[],
   storageKey: string,
-): Set<string> {
+): ColumnConfig[] {
   try {
     const raw = localStorage.getItem(storageKey);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0) {
+          return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
+        }
+        if (typeof parsed[0] === 'string') {
+          const visibleSet = new Set(parsed as string[]);
+          return columns.map((c) => ({ key: c.key, visible: visibleSet.has(c.key) }));
+        }
+        if (parsed[0] != null && typeof parsed[0] === 'object' && 'key' in (parsed[0] as object)) {
+          const saved = parsed as ColumnConfig[];
+          const savedKeys = new Set(saved.map((c) => c.key));
+          const missing = columns
+            .filter((c) => !savedKeys.has(c.key))
+            .map((c) => ({ key: c.key, visible: c.defaultVisible }));
+          return [...saved, ...missing];
+        }
+      }
+    }
   } catch {}
-  return new Set(columns.filter((c) => c.defaultVisible).map((c) => c.key));
+  return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
 }
 
-function saveVisible(storageKey: string, visible: Set<string>): void {
-  try { localStorage.setItem(storageKey, JSON.stringify([...visible])); } catch {}
+function saveColumnConfig(storageKey: string, configs: ColumnConfig[]): void {
+  try { localStorage.setItem(storageKey, JSON.stringify(configs)); } catch {}
+}
+
+function defaultColumnConfigs(columns: { key: string; defaultVisible: boolean }[]): ColumnConfig[] {
+  return columns.map((c) => ({ key: c.key, visible: c.defaultVisible }));
 }
 
 // ── Pills ─────────────────────────────────────────────────────────────────────
@@ -169,16 +205,19 @@ function PriorityPill({ priority }: { priority: WishlistItem['priority'] }) {
 // ── Column selector ───────────────────────────────────────────────────────────
 
 type ColumnSelectorProps = {
-  columns: { key: string; label: string }[];
-  visible: Set<string>;
-  onToggle: (key: string, v: boolean) => void;
+  configs: ColumnConfig[];
+  columns: { key: string; label: string; defaultWidth?: number }[];
+  onChange: (configs: ColumnConfig[]) => void;
   onShowAll: () => void;
   onReset: () => void;
+  onResetWidths: () => void;
+  resetKey: number;
 };
 
-function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: ColumnSelectorProps) {
+function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
 
   useEffect(() => {
     if (!open) return;
@@ -188,6 +227,20 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
+
+  const moveUp = (idx: number) => {
+    if (idx === 0) return;
+    const next = [...configs];
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    onChange(next);
+  };
+
+  const moveDown = (idx: number) => {
+    if (idx === configs.length - 1) return;
+    const next = [...configs];
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    onChange(next);
+  };
 
   return (
     <div className={styles.colSelectorWrap} ref={wrapRef}>
@@ -203,19 +256,54 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
           <div className={styles.colSelectorActions}>
             <button className={styles.colSelectorAction} onClick={onShowAll}>すべて表示</button>
             <button className={styles.colSelectorAction} onClick={onReset}>初期表示に戻す</button>
+            <button className={styles.colSelectorAction} onClick={onResetWidths}>幅を初期値に戻す</button>
           </div>
           <div className={styles.colSelectorList}>
-            {columns.map((col) => (
-              <label key={col.key} className={styles.colSelectorItem}>
-                <input
-                  type="checkbox"
-                  className={styles.colSelectorCheck}
-                  checked={visible.has(col.key)}
-                  onChange={(e) => onToggle(col.key, e.target.checked)}
-                />
-                {col.label}
-              </label>
-            ))}
+            {configs.map((config, idx) => {
+              const col = colMap.get(config.key);
+              if (!col) return null;
+              return (
+                <div key={config.key} className={styles.colSelectorItem}>
+                  <input
+                    type="checkbox"
+                    className={styles.colSelectorCheck}
+                    checked={config.visible}
+                    onChange={(e) =>
+                      onChange(configs.map((c) => c.key === config.key ? { ...c, visible: e.target.checked } : c))
+                    }
+                  />
+                  <span className={styles.colSelectorLabel}>{col.label}</span>
+                  <span className={styles.colWidthLabel}>幅</span>
+                  <input
+                    type="number"
+                    className={styles.colWidthInput}
+                    key={`w-${config.key}-${resetKey}`}
+                    defaultValue={config.width ?? ''}
+                    placeholder={String(col.defaultWidth ?? 100)}
+                    min="40"
+                    max="800"
+                    onBlur={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      const width = Number.isFinite(n) && n >= 40 ? n : undefined;
+                      onChange(configs.map((c) => c.key === config.key ? { ...c, width } : c));
+                    }}
+                  />
+                  <span className={styles.colWidthUnit}>px</span>
+                  <button
+                    className={styles.colMoveBtn}
+                    onClick={() => moveUp(idx)}
+                    disabled={idx === 0}
+                    title="上へ移動"
+                  >↑</button>
+                  <button
+                    className={styles.colMoveBtn}
+                    onClick={() => moveDown(idx)}
+                    disabled={idx === configs.length - 1}
+                    title="下へ移動"
+                  >↓</button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -226,16 +314,16 @@ function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: Colu
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
-  { key: 'priority',       label: '優先度',     defaultVisible: true, render: (i) => <PriorityPill priority={i.priority} /> },
-  { key: 'productNo',      label: '品番',       defaultVisible: true, render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
-  { key: 'productName',    label: '商品名',     defaultVisible: true, render: (i) => <span className={styles.productName}>{i.productName}</span> },
-  { key: 'skuCode',        label: 'SKU',        defaultVisible: true, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
-  { key: 'color',          label: 'カラー',     defaultVisible: true, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
-  { key: 'size',           label: 'サイズ',     defaultVisible: true, render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
-  { key: 'category',       label: 'カテゴリ',   defaultVisible: true, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
-  { key: 'releaseDate',    label: '発売日',     defaultVisible: true, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
-  { key: 'reason',         label: '理由',       defaultVisible: true, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
-  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
+  { key: 'priority',        label: '優先度',       defaultVisible: true, defaultWidth: 70,  render: (i) => <PriorityPill priority={i.priority} /> },
+  { key: 'productNo',       label: '品番',         defaultVisible: true, defaultWidth: 90,  render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
+  { key: 'productName',     label: '商品名',       defaultVisible: true, defaultWidth: 200, render: (i) => <span className={styles.productName}>{i.productName}</span> },
+  { key: 'skuCode',         label: 'SKU',          defaultVisible: true, defaultWidth: 120, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',           label: 'カラー',       defaultVisible: true, defaultWidth: 120, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
+  { key: 'size',            label: 'サイズ',       defaultVisible: true, defaultWidth: 70,  render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
+  { key: 'category',        label: 'カテゴリ',     defaultVisible: true, defaultWidth: 110, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
+  { key: 'releaseDate',     label: '発売日',       defaultVisible: true, defaultWidth: 100, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
+  { key: 'reason',          label: '理由',         defaultVisible: true, defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
+  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true, defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -244,31 +332,40 @@ export function WishlistTab({ variations }: Props) {
   const hasData = variations.length > 0;
   const [cond, setCond] = useState<Conditions>(DEFAULT_CONDITIONS);
 
-  const [visible, setVisible] = useState<Set<string>>(() =>
-    loadVisible(WISHLIST_COLUMNS, WISHLIST_STORAGE_KEY)
+  const [configs, setConfigs] = useState<ColumnConfig[]>(() =>
+    loadColumnConfig(WISHLIST_COLUMNS, WISHLIST_STORAGE_KEY)
+  );
+  const [resetKey, setResetKey] = useState(0);
+
+  const handleChange = (newConfigs: ColumnConfig[]) => {
+    setConfigs(newConfigs);
+    saveColumnConfig(WISHLIST_STORAGE_KEY, newConfigs);
+  };
+
+  const showAll = () => handleChange(configs.map((c) => ({ ...c, visible: true })));
+  const resetDefault = () => {
+    handleChange(defaultColumnConfigs(WISHLIST_COLUMNS));
+    setResetKey((k) => k + 1);
+  };
+  const resetWidths = () => {
+    handleChange(configs.map((c) => ({ ...c, width: undefined })));
+    setResetKey((k) => k + 1);
+  };
+
+  const colMap = useMemo(() => new Map(WISHLIST_COLUMNS.map((c) => [c.key, c])), []);
+
+  const visibleCols = useMemo(() =>
+    configs
+      .filter((c) => c.visible)
+      .flatMap((c) => {
+        const col = colMap.get(c.key);
+        return col ? [{ config: c, col }] : [];
+      }),
+    [configs, colMap]
   );
 
-  const toggleCol = (key: string, show: boolean) =>
-    setVisible((prev) => {
-      const next = new Set(prev);
-      if (show) next.add(key); else next.delete(key);
-      saveVisible(WISHLIST_STORAGE_KEY, next);
-      return next;
-    });
-
-  const showAll = () => {
-    const all = new Set(WISHLIST_COLUMNS.map((c) => c.key));
-    setVisible(all);
-    saveVisible(WISHLIST_STORAGE_KEY, all);
-  };
-
-  const resetDefault = () => {
-    const defaults = new Set(WISHLIST_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
-    setVisible(defaults);
-    saveVisible(WISHLIST_STORAGE_KEY, defaults);
-  };
-
-  const visibleCols = WISHLIST_COLUMNS.filter((c) => visible.has(c.key));
+  const getWidth = (config: ColumnConfig, col: TableColumn<WishlistItem>) =>
+    config.width ?? col.defaultWidth ?? 100;
 
   const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
 
@@ -460,11 +557,13 @@ export function WishlistTab({ variations }: Props) {
             </p>
             <div className={styles.tablePanelBtns}>
               <ColumnSelector
+                configs={configs}
                 columns={WISHLIST_COLUMNS}
-                visible={visible}
-                onToggle={toggleCol}
+                onChange={handleChange}
                 onShowAll={showAll}
                 onReset={resetDefault}
+                onResetWidths={resetWidths}
+                resetKey={resetKey}
               />
               <button
                 className={styles.csvBtn}
@@ -487,18 +586,23 @@ export function WishlistTab({ variations }: Props) {
           ) : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
+                <colgroup>
+                  {visibleCols.map(({ config, col }) => (
+                    <col key={config.key} style={{ width: getWidth(config, col) }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
-                    {visibleCols.map((col) => (
-                      <th key={col.key} className={styles.th}>{col.label}</th>
+                    {visibleCols.map(({ config, col }) => (
+                      <th key={config.key} className={styles.th}>{col.label}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((item) => (
                     <tr key={`${item.productNo}-${item.skuCode}`} className={styles.tr}>
-                      {visibleCols.map((col) => (
-                        <td key={col.key} className={styles.td}>{col.render(item)}</td>
+                      {visibleCols.map(({ config, col }) => (
+                        <td key={config.key} className={styles.td}>{col.render(item)}</td>
                       ))}
                     </tr>
                   ))}
