@@ -352,7 +352,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.81rem;
-  min-width: 700px;
+  min-width: 900px;
 }
 
 .th {
@@ -454,6 +454,35 @@
 
 .actionCell {
   font-size: 0.76rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+/* SKU badge */
+.skuBadge {
+  display: inline-block;
+  font-size: 0.71rem;
+  font-weight: 700;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Color cell */
+.colorCell {
+  font-size: 0.78rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+/* Size cell */
+.sizeCell {
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--color-text);
   white-space: nowrap;
 }

@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import type { MdProduct, WishlistItem } from '../types/md';
+import type { MdProduct, MdVariation, WishlistItem } from '../types/md';
 import styles from './WishlistTab.module.css';
 
 type Props = {
-  products: MdProduct[];
+  products?: MdProduct[];
+  variations: MdVariation[];
 };
 
 type Conditions = {
@@ -11,6 +12,8 @@ type Conditions = {
   priority: string;
   status: string;
   releaseMonth: string;
+  color: string;
+  size: string;
   excludeNos: string;
   limit: string;
 };
@@ -20,29 +23,31 @@ const DEFAULT_CONDITIONS: Conditions = {
   priority: '',
   status: '',
   releaseMonth: '',
+  color: '',
+  size: '',
   excludeNos: '',
   limit: '',
 };
 
-function toWishlistItems(products: MdProduct[]): WishlistItem[] {
-  return products.map((p) => {
+function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
+  return variations.map((v) => {
     let priority: WishlistItem['priority'];
     let reason: string;
     let suggestedAction: string;
 
-    if (p.status === '素材未取得') {
-      priority = '中';
-      reason = '商品情報の補完確認が必要';
-      suggestedAction = '素材補完後に確認';
-    } else if (p.status === '補完未取得') {
+    if (v.status === '素材未取得') {
       priority = '中';
       reason = '商品情報の補完確認が必要';
       suggestedAction = '補完内容を確認';
-    } else if (p.category === 'PANTS') {
+    } else if (v.status === '補完未取得') {
+      priority = '中';
+      reason = '商品情報の補完確認が必要';
+      suggestedAction = '補完内容を確認';
+    } else if (v.category === 'PANTS') {
       priority = '中';
       reason = 'ボトムスカテゴリ候補';
       suggestedAction = '在庫・売上連携後に判断';
-    } else if (p.category === 'TOPS') {
+    } else if (v.category === 'TOPS') {
       priority = '中';
       reason = 'トップスカテゴリ候補';
       suggestedAction = '在庫・売上連携後に判断';
@@ -53,12 +58,14 @@ function toWishlistItems(products: MdProduct[]): WishlistItem[] {
     }
 
     return {
-      productNo: p.productNo,
-      productName: p.productName,
-      category: p.category,
-      status: p.status,
-      releaseDate: p.releaseDate,
-      skuCount: p.skuCount,
+      productNo: v.productNo,
+      productName: v.productName,
+      skuCode: v.skuCode,
+      color: v.color,
+      size: v.size,
+      category: v.category,
+      releaseDate: v.releaseDate,
+      status: v.status,
       reason,
       priority,
       suggestedAction,
@@ -83,6 +90,8 @@ function applyConditions(items: WishlistItem[], cond: Conditions): WishlistItem[
   if (cond.priority)     result = result.filter((i) => i.priority === cond.priority);
   if (cond.status)       result = result.filter((i) => i.status === cond.status);
   if (cond.releaseMonth) result = result.filter((i) => i.releaseDate?.startsWith(cond.releaseMonth));
+  if (cond.color)        result = result.filter((i) => i.color === cond.color);
+  if (cond.size)         result = result.filter((i) => i.size === cond.size);
   if (excludeSet.size > 0) result = result.filter((i) => !excludeSet.has(i.productNo));
   if (cond.limit)         result = result.slice(0, Number(cond.limit));
 
@@ -90,8 +99,8 @@ function applyConditions(items: WishlistItem[], cond: Conditions): WishlistItem[
 }
 
 function exportCsv(items: WishlistItem[]) {
-  const BOM = '\uFEFF';
-  const header = '優先度,品番,商品名,カテゴリ,発売日,SKU数,理由,推奨アクション';
+  const BOM = '﻿';
+  const header = '優先度,品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,理由,推奨アクション';
   const escape = (v: string) =>
     v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
   const rows = items.map((it) =>
@@ -99,9 +108,11 @@ function exportCsv(items: WishlistItem[]) {
       it.priority,
       it.productNo,
       it.productName,
+      it.skuCode,
+      it.color ?? '',
+      it.size ?? '',
       it.category,
       it.releaseDate ?? '',
-      it.skuCount != null ? String(it.skuCount) : '',
       it.reason,
       it.suggestedAction,
     ]
@@ -128,28 +139,38 @@ function PriorityPill({ priority }: PriorityPillProps) {
   );
 }
 
-export function WishlistTab({ products }: Props) {
-  const hasData = products.length > 0;
+export function WishlistTab({ variations }: Props) {
+  const hasData = variations.length > 0;
   const [cond, setCond] = useState<Conditions>(DEFAULT_CONDITIONS);
 
-  const allItems = useMemo(() => (hasData ? toWishlistItems(products) : []), [products, hasData]);
+  const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
 
   const categories = useMemo(
-    () => [...new Set(products.map((p) => p.category))].sort(),
-    [products]
+    () => [...new Set(variations.map((v) => v.category))].sort(),
+    [variations]
   );
 
   const statuses = useMemo(
-    () => [...new Set(products.map((p) => p.status))].sort(),
-    [products]
+    () => [...new Set(variations.map((v) => v.status))].sort(),
+    [variations]
   );
 
   const releaseMonths = useMemo(() => {
-    const months = products
-      .map((p) => p.releaseDate?.slice(0, 7))
+    const months = variations
+      .map((v) => v.releaseDate?.slice(0, 7))
       .filter((m): m is string => !!m);
     return [...new Set(months)].sort();
-  }, [products]);
+  }, [variations]);
+
+  const colors = useMemo(
+    () => [...new Set(variations.map((v) => v.color).filter((c): c is string => !!c))].sort(),
+    [variations]
+  );
+
+  const sizes = useMemo(
+    () => [...new Set(variations.map((v) => v.size).filter((s): s is string => !!s))].sort(),
+    [variations]
+  );
 
   const filtered = useMemo(() => applyConditions(allItems, cond), [allItems, cond]);
 
@@ -158,7 +179,7 @@ export function WishlistTab({ products }: Props) {
   const lowCount  = filtered.filter((i) => i.priority === '低').length;
 
   const kpis = [
-    { label: '候補商品数',   value: hasData ? String(filtered.length) : '—', active: hasData },
+    { label: '候補SKU数',   value: hasData ? String(filtered.length) : '—', active: hasData },
     { label: '高優先度',     value: hasData ? String(highCount) : '—',        active: hasData && highCount > 0 },
     { label: '中優先度',     value: hasData ? String(midCount) : '—',         active: hasData && midCount > 0 },
     { label: '低優先度',     value: hasData ? String(lowCount) : '—',         active: hasData && lowCount > 0 },
@@ -179,16 +200,16 @@ export function WishlistTab({ products }: Props) {
             <span className={styles.title}>欲しいものリスト</span>
             <span className={styles.subtitle}>Store Request List</span>
           </div>
-          <p className={styles.desc}>商品一覧データをもとに、店舗共有用の欲しいもの候補を整理します。</p>
+          <p className={styles.desc}>バリエーションデータをもとに、店舗共有用の欲しいもの候補をSKU/カラー/サイズ単位で整理します。</p>
         </div>
         <span className={styles.statusBadge} data-variant={hasData ? 'active' : 'empty'}>
-          {hasData ? '商品一覧データ連携中' : '商品一覧データ未反映'}
+          {hasData ? 'バリエーションデータ連携中' : 'バリエーションデータ未反映'}
         </span>
       </div>
 
       {/* ── Disclaimer ── */}
       <div className={styles.disclaimer}>
-        ⚠️ 現在は商品一覧データをもとにした仮の候補表示です。店舗在庫・EC在庫・売上データ連携後に判定ロジックを追加予定です。
+        ⚠️ 現在は商品一覧のバリエーションデータをもとにした仮の候補表示です。店舗在庫・EC在庫・売上データ連携後に、SKU/カラー/サイズ単位の判定ロジックを追加予定です。
       </div>
 
       {/* ── KPI row ── */}
@@ -208,7 +229,7 @@ export function WishlistTab({ products }: Props) {
         <div className={styles.conditionPanel}>
           <div className={styles.panelTitle}>条件設定</div>
           <p className={styles.panelDesc}>
-            在庫・売上連携前の仮条件です。現在は商品一覧データのカテゴリ・ステータス・発売月などで候補を絞り込みます。
+            在庫・売上連携前の仮条件です。カテゴリ・ステータス・発売月・カラー・サイズなどで候補を絞り込みます。
           </p>
           <p className={styles.sessionNote}>現在の条件はブラウザ上の一時設定です。リロードすると初期状態に戻ります。</p>
 
@@ -243,6 +264,22 @@ export function WishlistTab({ products }: Props) {
             <select className={styles.filterSelect} value={cond.releaseMonth} onChange={set('releaseMonth')} disabled={!hasData}>
               <option value=''>全て</option>
               {releaseMonths.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>カラー</label>
+            <select className={styles.filterSelect} value={cond.color} onChange={set('color')} disabled={!hasData}>
+              <option value=''>全て</option>
+              {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>サイズ</label>
+            <select className={styles.filterSelect} value={cond.size} onChange={set('size')} disabled={!hasData}>
+              <option value=''>全て</option>
+              {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
 
@@ -292,7 +329,7 @@ export function WishlistTab({ products }: Props) {
             <p className={styles.tableNote} data-real={hasData || undefined}>
               {hasData
                 ? `表示中 ${filtered.length}件 / 全${allItems.length}件（仮判定）`
-                : '商品一覧データを取り込むと候補が表示されます'}
+                : '商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと候補が表示されます'}
             </p>
             <button
               className={styles.csvBtn}
@@ -305,7 +342,7 @@ export function WishlistTab({ products }: Props) {
 
           {!hasData ? (
             <div className={styles.emptyGuide}>
-              <p>商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと、欲しいもの候補を表示できます。</p>
+              <p>商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと、バリエーション別の欲しいもの候補を表示できます。</p>
             </div>
           ) : filtered.length === 0 ? (
             <div className={styles.emptyGuide}>
@@ -316,20 +353,22 @@ export function WishlistTab({ products }: Props) {
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    {['優先度', '品番', '商品名', 'カテゴリ', '発売日', 'SKU数', '理由', '推奨アクション'].map((h) => (
+                    {['優先度', '品番', '商品名', 'SKU', 'カラー', 'サイズ', 'カテゴリ', '発売日', '理由', '推奨アクション'].map((h) => (
                       <th key={h} className={styles.th}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((item) => (
-                    <tr key={item.productNo} className={styles.tr}>
+                    <tr key={`${item.productNo}-${item.skuCode}`} className={styles.tr}>
                       <td className={styles.td}><PriorityPill priority={item.priority} /></td>
                       <td className={styles.td}><span className={styles.productNo}>{item.productNo}</span></td>
                       <td className={styles.td}><span className={styles.productName}>{item.productName}</span></td>
+                      <td className={styles.td}><span className={styles.skuBadge}>{item.skuCode}</span></td>
+                      <td className={styles.td}><span className={styles.colorCell}>{item.color ?? '—'}</span></td>
+                      <td className={styles.td}><span className={styles.sizeCell}>{item.size ?? '—'}</span></td>
                       <td className={styles.td}><span className={styles.categoryBadge}>{item.category}</span></td>
                       <td className={styles.td}><span className={styles.dateCell}>{item.releaseDate ?? '—'}</span></td>
-                      <td className={styles.td}><span className={styles.numCell}>{item.skuCount ?? '—'}</span></td>
                       <td className={styles.td}><span className={styles.reasonCell}>{item.reason}</span></td>
                       <td className={styles.td}><span className={styles.actionCell}>{item.suggestedAction}</span></td>
                     </tr>
@@ -347,10 +386,10 @@ export function WishlistTab({ products }: Props) {
         <ul className={styles.nextPhaseList}>
           {[
             'futureshop APIからEC在庫を取得',
-            '店舗在庫データを取込',
-            '直近売上を連携',
+            '店舗在庫データを取込（SKU/カラー/サイズ単位）',
+            '直近売上を連携（SKU別集計）',
             '消化率を計算',
-            '欲しいもの候補を自動判定',
+            '欲しいもの候補を自動判定（在庫・売上ベース）',
             '店舗共有用CSV/xlsxを出力',
             '条件設定画面で判定条件を変更',
           ].map((item) => (

@@ -29,10 +29,13 @@ export type MdVariation = {
 export type WishlistItem = {
   productNo: string;
   productName: string;
+  skuCode: string;
+  color?: string;
+  size?: string;
   category: string;
-  status: string;
   releaseDate?: string;
   skuCount?: number;
+  status: string;
   reason: string;
   priority: '高' | '中' | '低';
   suggestedAction: string;

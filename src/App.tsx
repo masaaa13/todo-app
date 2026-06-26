@@ -161,7 +161,7 @@ function App() {
 
           {/* Wishlist: full width, no inner wrapper */}
           {activeTab === 'wishlist' && (
-            <WishlistTab products={mdProducts} />
+            <WishlistTab products={mdProducts} variations={mdVariations} />
           )}
 
 
