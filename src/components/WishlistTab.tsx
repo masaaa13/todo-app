@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { MdProduct, MdVariation, WishlistItem } from '../types/md';
 import styles from './WishlistTab.module.css';
 
@@ -17,6 +17,15 @@ type Conditions = {
   excludeNos: string;
   limit: string;
 };
+
+type TableColumn<T> = {
+  key: string;
+  label: string;
+  defaultVisible: boolean;
+  render: (row: T) => React.ReactNode;
+};
+
+const WISHLIST_STORAGE_KEY = 'ecTodo.wishlistColumns';
 
 const DEFAULT_CONDITIONS: Conditions = {
   category: '',
@@ -129,8 +138,26 @@ function exportCsv(items: WishlistItem[]) {
   URL.revokeObjectURL(url);
 }
 
-type PriorityPillProps = { priority: WishlistItem['priority'] };
-function PriorityPill({ priority }: PriorityPillProps) {
+// ── Column visibility helpers ─────────────────────────────────────────────────
+
+function loadVisible(
+  columns: { key: string; defaultVisible: boolean }[],
+  storageKey: string,
+): Set<string> {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {}
+  return new Set(columns.filter((c) => c.defaultVisible).map((c) => c.key));
+}
+
+function saveVisible(storageKey: string, visible: Set<string>): void {
+  try { localStorage.setItem(storageKey, JSON.stringify([...visible])); } catch {}
+}
+
+// ── Pills ─────────────────────────────────────────────────────────────────────
+
+function PriorityPill({ priority }: { priority: WishlistItem['priority'] }) {
   const variant = priority === '高' ? 'high' : priority === '中' ? 'mid' : 'low';
   return (
     <span className={styles.priorityPill} data-variant={variant}>
@@ -139,9 +166,109 @@ function PriorityPill({ priority }: PriorityPillProps) {
   );
 }
 
+// ── Column selector ───────────────────────────────────────────────────────────
+
+type ColumnSelectorProps = {
+  columns: { key: string; label: string }[];
+  visible: Set<string>;
+  onToggle: (key: string, v: boolean) => void;
+  onShowAll: () => void;
+  onReset: () => void;
+};
+
+function ColumnSelector({ columns, visible, onToggle, onShowAll, onReset }: ColumnSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  return (
+    <div className={styles.colSelectorWrap} ref={wrapRef}>
+      <button
+        className={styles.colSelectorBtn}
+        onClick={() => setOpen((v) => !v)}
+        data-open={open || undefined}
+      >
+        表示項目
+      </button>
+      {open && (
+        <div className={styles.colSelectorPanel}>
+          <div className={styles.colSelectorActions}>
+            <button className={styles.colSelectorAction} onClick={onShowAll}>すべて表示</button>
+            <button className={styles.colSelectorAction} onClick={onReset}>初期表示に戻す</button>
+          </div>
+          <div className={styles.colSelectorList}>
+            {columns.map((col) => (
+              <label key={col.key} className={styles.colSelectorItem}>
+                <input
+                  type="checkbox"
+                  className={styles.colSelectorCheck}
+                  checked={visible.has(col.key)}
+                  onChange={(e) => onToggle(col.key, e.target.checked)}
+                />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Column definitions ────────────────────────────────────────────────────────
+
+const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
+  { key: 'priority',       label: '優先度',     defaultVisible: true, render: (i) => <PriorityPill priority={i.priority} /> },
+  { key: 'productNo',      label: '品番',       defaultVisible: true, render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
+  { key: 'productName',    label: '商品名',     defaultVisible: true, render: (i) => <span className={styles.productName}>{i.productName}</span> },
+  { key: 'skuCode',        label: 'SKU',        defaultVisible: true, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',          label: 'カラー',     defaultVisible: true, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
+  { key: 'size',           label: 'サイズ',     defaultVisible: true, render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
+  { key: 'category',       label: 'カテゴリ',   defaultVisible: true, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
+  { key: 'releaseDate',    label: '発売日',     defaultVisible: true, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
+  { key: 'reason',         label: '理由',       defaultVisible: true, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
+  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
+];
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function WishlistTab({ variations }: Props) {
   const hasData = variations.length > 0;
   const [cond, setCond] = useState<Conditions>(DEFAULT_CONDITIONS);
+
+  const [visible, setVisible] = useState<Set<string>>(() =>
+    loadVisible(WISHLIST_COLUMNS, WISHLIST_STORAGE_KEY)
+  );
+
+  const toggleCol = (key: string, show: boolean) =>
+    setVisible((prev) => {
+      const next = new Set(prev);
+      if (show) next.add(key); else next.delete(key);
+      saveVisible(WISHLIST_STORAGE_KEY, next);
+      return next;
+    });
+
+  const showAll = () => {
+    const all = new Set(WISHLIST_COLUMNS.map((c) => c.key));
+    setVisible(all);
+    saveVisible(WISHLIST_STORAGE_KEY, all);
+  };
+
+  const resetDefault = () => {
+    const defaults = new Set(WISHLIST_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key));
+    setVisible(defaults);
+    saveVisible(WISHLIST_STORAGE_KEY, defaults);
+  };
+
+  const visibleCols = WISHLIST_COLUMNS.filter((c) => visible.has(c.key));
 
   const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
 
@@ -331,13 +458,22 @@ export function WishlistTab({ variations }: Props) {
                 ? `表示中 ${filtered.length}件 / 全${allItems.length}件（仮判定）`
                 : '商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと候補が表示されます'}
             </p>
-            <button
-              className={styles.csvBtn}
-              onClick={() => exportCsv(filtered)}
-              disabled={filtered.length === 0}
-            >
-              表示中{filtered.length}件をCSV出力
-            </button>
+            <div className={styles.tablePanelBtns}>
+              <ColumnSelector
+                columns={WISHLIST_COLUMNS}
+                visible={visible}
+                onToggle={toggleCol}
+                onShowAll={showAll}
+                onReset={resetDefault}
+              />
+              <button
+                className={styles.csvBtn}
+                onClick={() => exportCsv(filtered)}
+                disabled={filtered.length === 0}
+              >
+                表示中{filtered.length}件をCSV出力
+              </button>
+            </div>
           </div>
 
           {!hasData ? (
@@ -353,24 +489,17 @@ export function WishlistTab({ variations }: Props) {
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    {['優先度', '品番', '商品名', 'SKU', 'カラー', 'サイズ', 'カテゴリ', '発売日', '理由', '推奨アクション'].map((h) => (
-                      <th key={h} className={styles.th}>{h}</th>
+                    {visibleCols.map((col) => (
+                      <th key={col.key} className={styles.th}>{col.label}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((item) => (
                     <tr key={`${item.productNo}-${item.skuCode}`} className={styles.tr}>
-                      <td className={styles.td}><PriorityPill priority={item.priority} /></td>
-                      <td className={styles.td}><span className={styles.productNo}>{item.productNo}</span></td>
-                      <td className={styles.td}><span className={styles.productName}>{item.productName}</span></td>
-                      <td className={styles.td}><span className={styles.skuBadge}>{item.skuCode.replaceAll('_', '')}</span></td>
-                      <td className={styles.td}><span className={styles.colorCell}>{item.color ?? '—'}</span></td>
-                      <td className={styles.td}><span className={styles.sizeCell}>{item.size ?? '—'}</span></td>
-                      <td className={styles.td}><span className={styles.categoryBadge}>{item.category}</span></td>
-                      <td className={styles.td}><span className={styles.dateCell}>{item.releaseDate ?? '—'}</span></td>
-                      <td className={styles.td}><span className={styles.reasonCell}>{item.reason}</span></td>
-                      <td className={styles.td}><span className={styles.actionCell}>{item.suggestedAction}</span></td>
+                      {visibleCols.map((col) => (
+                        <td key={col.key} className={styles.td}>{col.render(item)}</td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>

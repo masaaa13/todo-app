@@ -132,12 +132,16 @@
 
 .clearBtn:hover { background: #ffe4e6; }
 
-/* ── View toggle ─────────────────────────────────────────────────────────── */
+/* ── View control row (toggle + column selector) ─────────────────────────── */
 
-.viewToggleWrap {
+.viewControlRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
+
+/* ── View toggle ─────────────────────────────────────────────────────────── */
 
 .viewToggle {
   display: inline-flex;
@@ -624,4 +628,108 @@
 
 @media (max-width: 420px) {
   .kpiRow { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Column selector ─────────────────────────────────────────────────────── */
+
+.colSelectorWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.colSelectorBtn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text);
+  background: var(--color-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.colSelectorBtn::after {
+  content: '▾';
+  font-size: 0.65rem;
+  opacity: 0.6;
+}
+
+.colSelectorBtn[data-open] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: #eff6ff;
+}
+
+.colSelectorBtn:hover { background: var(--color-bg); }
+
+.colSelectorPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  background: var(--color-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.colSelectorActions {
+  display: flex;
+  gap: 6px;
+}
+
+.colSelectorAction {
+  flex: 1;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.colSelectorAction:hover { background: #e5e7eb; }
+
+.colSelectorList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.colSelectorItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 5px;
+  font-size: 0.76rem;
+  color: var(--color-text);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.1s;
+}
+
+.colSelectorItem:hover { background: var(--color-bg); }
+
+.colSelectorCheck {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  flex-shrink: 0;
 }
