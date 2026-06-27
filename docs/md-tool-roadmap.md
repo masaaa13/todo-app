@@ -452,6 +452,73 @@ npm run fs:orders:check -- --days 7 --product 1266302
 
 ---
 
+## Phase 4.8: FutureShop 商品検索API検証（実装済み）
+
+**目的:**
+
+FutureShop 商品検索APIを直接叩き、MdProduct / MdVariation 変換に必要な  
+フィールド（商品URL・画像URL・バリエーション・予定在庫）が取得できるか検証する。
+
+**方針:**
+
+- 認証: OAuth2 client_credentials フロー（VPS不使用、FutureShop API へ直接接続）
+- 環境変数: `FS_CLIENT_ID` / `FS_CLIENT_SECRET` / `FS_SHOP_KEY`（.env.local）
+- 個人情報フィールドは保存・出力しない
+- シークレット・アクセストークンはコンソール・ファイルともに非表示（[MASKED]）
+
+**検証スクリプト:**
+
+```bash
+npm run fs:products:check -- --product 1266302
+npm run fs:products:check -- --product 1266302 --types variation,image,plannedStock
+npm run fs:products:check -- --product 1266302 --count 10
+```
+
+**エンドポイント:**
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| `POST` | `/oauth/token` | client_credentials フロー（Basic認証 + X-SHOP-KEY） |
+| `GET`  | `/admin-api/v1/products` | 商品検索（productNo / types / count） |
+
+使用環境変数:
+- `FS_CLIENT_ID` — FutureShop OAuth2 クライアントID
+- `FS_CLIENT_SECRET` — FutureShop OAuth2 クライアントシークレット
+- `FS_SHOP_KEY` — X-SHOP-KEY ヘッダー値
+
+**検出対象フィールド:**
+
+| フィールド | 確認項目 |
+|---|---|
+| 商品URL | `productList[].url` / `urlCode` 等 |
+| 商品URI | `productList[].uri` |
+| 商品名 | `goodsName` / `name` / `productName` |
+| バリエーション | `variationList[]` 有無と件数 |
+| SKUコード | `variation.skuNo`（10桁） |
+| 横軸枝番・名称 | `horizontalNo` / `horizontalName` |
+| 縦軸枝番・名称 | `verticalNo` / `verticalName` |
+| 画像URL | `imageList[].lImagePath` 等 |
+| バリエーション画像 | `variation.imageInfo` 等 |
+| JANコード | `variation.janCode` |
+| 在庫数 | `variation.inventoryInfo.count` 等 |
+| 予定在庫 | `plannedStockInfo` 等（`types=plannedStock` 要指定） |
+| 予約販売 | `preorderInfo` 等（`types=preorder` 要指定） |
+
+**保存先（git管理外）:**
+
+- `tmp/futureshop-products-response.sample.json` — マスク済みフルレスポンス
+- `tmp/futureshop-products-response.summary.json` — MDツール反映用サマリー
+
+**今回実装しないこと:**
+
+- MDツール画面への商品同期ボタン追加
+- MdProduct / MdVariation への一括書き込み
+- localStorage への商品データ保存
+- 書き込み系API（商品登録・更新・削除）
+- Vercel 反映
+
+---
+
 ## Phase 5: 欲しいものリスト高度化
 
 - 店舗側へ共有する補充リスト自動生成（バリエーション別を基本単位とする）

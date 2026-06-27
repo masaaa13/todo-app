@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "fs:stock:check": "node scripts/futureshop/check-stock-api.mjs",
-    "fs:orders:check": "node scripts/futureshop/check-orders-api.mjs"
+    "fs:orders:check": "node scripts/futureshop/check-orders-api.mjs",
+    "fs:products:check": "node scripts/futureshop/check-products-api.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
