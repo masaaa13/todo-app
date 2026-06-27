@@ -206,15 +206,13 @@ function PriorityPill({ priority }: { priority: WishlistItem['priority'] }) {
 
 type ColumnSelectorProps = {
   configs: ColumnConfig[];
-  columns: { key: string; label: string; defaultWidth?: number }[];
+  columns: { key: string; label: string }[];
   onChange: (configs: ColumnConfig[]) => void;
   onShowAll: () => void;
   onReset: () => void;
-  onResetWidths: () => void;
-  resetKey: number;
 };
 
-function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
+function ColumnSelector({ configs, columns, onChange, onShowAll, onReset }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
@@ -236,20 +234,6 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
       setDragOverKey(null);
     }
   }, [open]);
-
-  const moveUp = (idx: number) => {
-    if (idx === 0) return;
-    const next = [...configs];
-    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-    onChange(next);
-  };
-
-  const moveDown = (idx: number) => {
-    if (idx === configs.length - 1) return;
-    const next = [...configs];
-    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-    onChange(next);
-  };
 
   const handleDragStart = (e: React.DragEvent, key: string) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -299,10 +283,9 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
           <div className={styles.colSelectorActions}>
             <button className={styles.colSelectorAction} onClick={onShowAll}>すべて表示</button>
             <button className={styles.colSelectorAction} onClick={onReset}>初期表示に戻す</button>
-            <button className={styles.colSelectorAction} onClick={onResetWidths}>幅を初期値に戻す</button>
           </div>
           <div className={styles.colSelectorList}>
-            {configs.map((config, idx) => {
+            {configs.map((config) => {
               const col = colMap.get(config.key);
               if (!col) return null;
               return (
@@ -315,7 +298,7 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
                   onDrop={(e) => handleDrop(e, config.key)}
                   onDragEnd={handleDragEnd}
                   data-dragging={draggingKey === config.key || undefined}
-                  data-dragover={dragOverKey === config.key && draggingKey !== config.key || undefined}
+                  data-dragover={(dragOverKey === config.key && draggingKey !== config.key) || undefined}
                 >
                   <span className={styles.dragHandle} title="ドラッグで並び替え">☰</span>
                   <input
@@ -327,34 +310,6 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
                     }
                   />
                   <span className={styles.colSelectorLabel}>{col.label}</span>
-                  <span className={styles.colWidthLabel}>幅</span>
-                  <input
-                    type="number"
-                    className={styles.colWidthInput}
-                    key={`w-${config.key}-${resetKey}`}
-                    defaultValue={config.width ?? ''}
-                    placeholder={String(col.defaultWidth ?? 100)}
-                    min="40"
-                    max="800"
-                    onBlur={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      const width = Number.isFinite(n) && n >= 40 ? n : undefined;
-                      onChange(configs.map((c) => c.key === config.key ? { ...c, width } : c));
-                    }}
-                  />
-                  <span className={styles.colWidthUnit}>px</span>
-                  <button
-                    className={styles.colMoveBtn}
-                    onClick={() => moveUp(idx)}
-                    disabled={idx === 0}
-                    title="上へ移動"
-                  >↑</button>
-                  <button
-                    className={styles.colMoveBtn}
-                    onClick={() => moveDown(idx)}
-                    disabled={idx === configs.length - 1}
-                    title="下へ移動"
-                  >↓</button>
                 </div>
               );
             })}
@@ -389,10 +344,10 @@ export function WishlistTab({ variations }: Props) {
   const [configs, setConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(WISHLIST_COLUMNS, WISHLIST_STORAGE_KEY)
   );
-  const [resetKey, setResetKey] = useState(0);
 
   // Resize state
   const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const [resizingKey, setResizingKey] = useState<string | null>(null);
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
   const dragWidthRef = useRef(0);
 
@@ -402,14 +357,8 @@ export function WishlistTab({ variations }: Props) {
   };
 
   const showAll = () => handleChange(configs.map((c) => ({ ...c, visible: true })));
-  const resetDefault = () => {
-    handleChange(defaultColumnConfigs(WISHLIST_COLUMNS));
-    setResetKey((k) => k + 1);
-  };
-  const resetWidths = () => {
-    handleChange(configs.map((c) => ({ ...c, width: undefined })));
-    setResetKey((k) => k + 1);
-  };
+  // "初期表示に戻す" resets order, visibility, and widths all together
+  const resetDefault = () => handleChange(defaultColumnConfigs(WISHLIST_COLUMNS));
 
   const handleWidthChange = useCallback((key: string, width: number) => {
     setConfigs((prev) => {
@@ -424,6 +373,7 @@ export function WishlistTab({ variations }: Props) {
     e.stopPropagation();
     resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
     dragWidthRef.current = currentWidth;
+    setResizingKey(key);
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
 
@@ -436,17 +386,18 @@ export function WishlistTab({ variations }: Props) {
     };
 
     const onMouseUp = () => {
-      const key = resizingRef.current?.key;
+      const k = resizingRef.current?.key;
       const finalWidth = dragWidthRef.current;
-      if (key) {
-        handleWidthChange(key, finalWidth);
+      if (k) {
+        handleWidthChange(k, finalWidth);
         setLocalWidths((prev) => {
           const next = { ...prev };
-          delete next[key];
+          delete next[k];
           return next;
         });
       }
       resizingRef.current = null;
+      setResizingKey(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', onMouseMove);
@@ -471,6 +422,9 @@ export function WishlistTab({ variations }: Props) {
 
   const getWidth = (config: ColumnConfig, col: TableColumn<WishlistItem>) =>
     localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
+
+  // Sum of all visible column widths → sets explicit table width so fixed layout works
+  const totalWidth = visibleCols.reduce((sum, { config, col }) => sum + getWidth(config, col), 0);
 
   const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
 
@@ -667,8 +621,6 @@ export function WishlistTab({ variations }: Props) {
                 onChange={handleChange}
                 onShowAll={showAll}
                 onReset={resetDefault}
-                onResetWidths={resetWidths}
-                resetKey={resetKey}
               />
               <button
                 className={styles.csvBtn}
@@ -690,7 +642,10 @@ export function WishlistTab({ variations }: Props) {
             </div>
           ) : (
             <div className={styles.tableWrap}>
-              <table className={styles.table}>
+              <table
+                className={styles.table}
+                style={{ width: totalWidth, minWidth: totalWidth }}
+              >
                 <colgroup>
                   {visibleCols.map(({ config, col }) => (
                     <col key={config.key} style={{ width: getWidth(config, col) }} />
@@ -701,7 +656,12 @@ export function WishlistTab({ variations }: Props) {
                     {visibleCols.map(({ config, col }) => {
                       const w = getWidth(config, col);
                       return (
-                        <th key={config.key} className={styles.th}>
+                        <th
+                          key={config.key}
+                          className={styles.th}
+                          style={{ width: w, minWidth: w }}
+                          data-resizing={resizingKey === config.key || undefined}
+                        >
                           <span className={styles.thLabel}>{col.label}</span>
                           <span
                             className={styles.resizeHandle}

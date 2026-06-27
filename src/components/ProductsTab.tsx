@@ -482,15 +482,13 @@ function ActionPill({ action }: { action: string }) {
 
 type ColumnSelectorProps = {
   configs: ColumnConfig[];
-  columns: { key: string; label: string; defaultWidth?: number }[];
+  columns: { key: string; label: string }[];
   onChange: (configs: ColumnConfig[]) => void;
   onShowAll: () => void;
   onReset: () => void;
-  onResetWidths: () => void;
-  resetKey: number;
 };
 
-function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onResetWidths, resetKey }: ColumnSelectorProps) {
+function ColumnSelector({ configs, columns, onChange, onShowAll, onReset }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
@@ -512,20 +510,6 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
       setDragOverKey(null);
     }
   }, [open]);
-
-  const moveUp = (idx: number) => {
-    if (idx === 0) return;
-    const next = [...configs];
-    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-    onChange(next);
-  };
-
-  const moveDown = (idx: number) => {
-    if (idx === configs.length - 1) return;
-    const next = [...configs];
-    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-    onChange(next);
-  };
 
   const handleDragStart = (e: React.DragEvent, key: string) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -575,10 +559,9 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
           <div className={styles.colSelectorActions}>
             <button className={styles.colSelectorAction} onClick={onShowAll}>すべて表示</button>
             <button className={styles.colSelectorAction} onClick={onReset}>初期表示に戻す</button>
-            <button className={styles.colSelectorAction} onClick={onResetWidths}>幅を初期値に戻す</button>
           </div>
           <div className={styles.colSelectorList}>
-            {configs.map((config, idx) => {
+            {configs.map((config) => {
               const col = colMap.get(config.key);
               if (!col) return null;
               return (
@@ -591,7 +574,7 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
                   onDrop={(e) => handleDrop(e, config.key)}
                   onDragEnd={handleDragEnd}
                   data-dragging={draggingKey === config.key || undefined}
-                  data-dragover={dragOverKey === config.key && draggingKey !== config.key || undefined}
+                  data-dragover={(dragOverKey === config.key && draggingKey !== config.key) || undefined}
                 >
                   <span className={styles.dragHandle} title="ドラッグで並び替え">☰</span>
                   <input
@@ -603,34 +586,6 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset, onRese
                     }
                   />
                   <span className={styles.colSelectorLabel}>{col.label}</span>
-                  <span className={styles.colWidthLabel}>幅</span>
-                  <input
-                    type="number"
-                    className={styles.colWidthInput}
-                    key={`w-${config.key}-${resetKey}`}
-                    defaultValue={config.width ?? ''}
-                    placeholder={String(col.defaultWidth ?? 100)}
-                    min="40"
-                    max="800"
-                    onBlur={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      const width = Number.isFinite(n) && n >= 40 ? n : undefined;
-                      onChange(configs.map((c) => c.key === config.key ? { ...c, width } : c));
-                    }}
-                  />
-                  <span className={styles.colWidthUnit}>px</span>
-                  <button
-                    className={styles.colMoveBtn}
-                    onClick={() => moveUp(idx)}
-                    disabled={idx === 0}
-                    title="上へ移動"
-                  >↑</button>
-                  <button
-                    className={styles.colMoveBtn}
-                    onClick={() => moveDown(idx)}
-                    disabled={idx === configs.length - 1}
-                    title="下へ移動"
-                  >↓</button>
                 </div>
               );
             })}
@@ -687,6 +642,7 @@ type ProductTablePanelProps = {
 function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns, onWidthChange }: ProductTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
   const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const [resizingKey, setResizingKey] = useState<string | null>(null);
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
   const dragWidthRef = useRef(0);
 
@@ -703,11 +659,15 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
   const getWidth = (config: ColumnConfig, col: TableColumn<MdProduct>) =>
     localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
 
+  // Sum of all visible column widths → sets explicit table width so fixed layout works
+  const totalWidth = visibleCols.reduce((sum, { config, col }) => sum + getWidth(config, col), 0);
+
   const startResize = (e: React.MouseEvent, key: string, currentWidth: number) => {
     e.preventDefault();
     e.stopPropagation();
     resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
     dragWidthRef.current = currentWidth;
+    setResizingKey(key);
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
 
@@ -720,17 +680,18 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
     };
 
     const onMouseUp = () => {
-      const key = resizingRef.current?.key;
+      const k = resizingRef.current?.key;
       const finalWidth = dragWidthRef.current;
-      if (key) {
-        onWidthChange(key, finalWidth);
+      if (k) {
+        onWidthChange(k, finalWidth);
         setLocalWidths((prev) => {
           const next = { ...prev };
-          delete next[key];
+          delete next[k];
           return next;
         });
       }
       resizingRef.current = null;
+      setResizingKey(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', onMouseMove);
@@ -762,7 +723,10 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
         )}
       </div>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table
+          className={styles.table}
+          style={{ width: totalWidth, minWidth: totalWidth }}
+        >
           <colgroup>
             {visibleCols.map(({ config, col }) => (
               <col key={config.key} style={{ width: getWidth(config, col) }} />
@@ -773,7 +737,12 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
               {visibleCols.map(({ config, col }) => {
                 const w = getWidth(config, col);
                 return (
-                  <th key={config.key} className={styles.th}>
+                  <th
+                    key={config.key}
+                    className={styles.th}
+                    style={{ width: w, minWidth: w }}
+                    data-resizing={resizingKey === config.key || undefined}
+                  >
                     <span className={styles.thLabel}>{col.label}</span>
                     <span
                       className={styles.resizeHandle}
@@ -819,6 +788,7 @@ type VariationTablePanelProps = {
 function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns, onWidthChange }: VariationTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
   const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  const [resizingKey, setResizingKey] = useState<string | null>(null);
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
   const dragWidthRef = useRef(0);
 
@@ -835,11 +805,14 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
   const getWidth = (config: ColumnConfig, col: TableColumn<MdVariation>) =>
     localWidths[config.key] ?? config.width ?? col.defaultWidth ?? 100;
 
+  const totalWidth = visibleCols.reduce((sum, { config, col }) => sum + getWidth(config, col), 0);
+
   const startResize = (e: React.MouseEvent, key: string, currentWidth: number) => {
     e.preventDefault();
     e.stopPropagation();
     resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth };
     dragWidthRef.current = currentWidth;
+    setResizingKey(key);
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
 
@@ -852,17 +825,18 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
     };
 
     const onMouseUp = () => {
-      const key = resizingRef.current?.key;
+      const k = resizingRef.current?.key;
       const finalWidth = dragWidthRef.current;
-      if (key) {
-        onWidthChange(key, finalWidth);
+      if (k) {
+        onWidthChange(k, finalWidth);
         setLocalWidths((prev) => {
           const next = { ...prev };
-          delete next[key];
+          delete next[k];
           return next;
         });
       }
       resizingRef.current = null;
+      setResizingKey(null);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', onMouseMove);
@@ -898,7 +872,10 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
         )}
       </div>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table
+          className={styles.table}
+          style={{ width: totalWidth, minWidth: totalWidth }}
+        >
           <colgroup>
             {visibleCols.map(({ config, col }) => (
               <col key={config.key} style={{ width: getWidth(config, col) }} />
@@ -909,7 +886,12 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
               {visibleCols.map(({ config, col }) => {
                 const w = getWidth(config, col);
                 return (
-                  <th key={config.key} className={styles.th}>
+                  <th
+                    key={config.key}
+                    className={styles.th}
+                    style={{ width: w, minWidth: w }}
+                    data-resizing={resizingKey === config.key || undefined}
+                  >
                     <span className={styles.thLabel}>{col.label}</span>
                     <span
                       className={styles.resizeHandle}
@@ -993,15 +975,12 @@ export function ProductsTab({
   const [varCategory, setVarCategory] = useState('');
   const [varStatus, setVarStatus] = useState('');
 
-  // Column configs
   const [productConfigs, setProductConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(PRODUCT_COLUMNS, PRODUCT_STORAGE_KEY)
   );
   const [variationConfigs, setVariationConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(VARIATION_COLUMNS, VARIATION_STORAGE_KEY)
   );
-  const [productResetKey, setProductResetKey] = useState(0);
-  const [variationResetKey, setVariationResetKey] = useState(0);
 
   const handleProductChange = (newConfigs: ColumnConfig[]) => {
     setProductConfigs(newConfigs);
@@ -1012,7 +991,6 @@ export function ProductsTab({
     saveColumnConfig(VARIATION_STORAGE_KEY, newConfigs);
   };
 
-  // Width change from resize handle
   const handleProductWidthChange = useCallback((key: string, width: number) => {
     setProductConfigs((prev) => {
       const next = prev.map((c) => c.key === key ? { ...c, width } : c);
@@ -1029,25 +1007,12 @@ export function ProductsTab({
     });
   }, []);
 
+  // "初期表示に戻す" resets order, visibility, and widths all together
   const showAllProduct = () => handleProductChange(productConfigs.map((c) => ({ ...c, visible: true })));
-  const resetProduct = () => {
-    handleProductChange(defaultColumnConfigs(PRODUCT_COLUMNS));
-    setProductResetKey((k) => k + 1);
-  };
-  const resetProductWidths = () => {
-    handleProductChange(productConfigs.map((c) => ({ ...c, width: undefined })));
-    setProductResetKey((k) => k + 1);
-  };
+  const resetProduct   = () => handleProductChange(defaultColumnConfigs(PRODUCT_COLUMNS));
 
   const showAllVariation = () => handleVariationChange(variationConfigs.map((c) => ({ ...c, visible: true })));
-  const resetVariation = () => {
-    handleVariationChange(defaultColumnConfigs(VARIATION_COLUMNS));
-    setVariationResetKey((k) => k + 1);
-  };
-  const resetVariationWidths = () => {
-    handleVariationChange(variationConfigs.map((c) => ({ ...c, width: undefined })));
-    setVariationResetKey((k) => k + 1);
-  };
+  const resetVariation   = () => handleVariationChange(defaultColumnConfigs(VARIATION_COLUMNS));
 
   const isReal = products.length > 0;
   const hasVariations = variations.length > 0;
@@ -1129,8 +1094,6 @@ export function ProductsTab({
           onChange={viewMode === 'product' ? handleProductChange : handleVariationChange}
           onShowAll={viewMode === 'product' ? showAllProduct : showAllVariation}
           onReset={viewMode === 'product' ? resetProduct : resetVariation}
-          onResetWidths={viewMode === 'product' ? resetProductWidths : resetVariationWidths}
-          resetKey={viewMode === 'product' ? productResetKey : variationResetKey}
         />
       </div>
 
