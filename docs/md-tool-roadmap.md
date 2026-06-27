@@ -249,34 +249,77 @@ radial 参考: 消化週数 < 販売可能週数 − n → 売れ筋、消化週
 
 ---
 
-## Phase 4.5: FutureShop 在庫検索API 検証（完了）
+## Phase 4.5: ConoHa VPS 中継API を使った在庫取得検証（確定）
 
-**目的:** 在庫検索APIのレスポンス構造を確認し、MDツールへの反映可否を判断する
+**方針:**
+
+FutureShop Open API 直接接続は断念。  
+ZOZO客注管理スプシ/GAS で既に動作している **ConoHa VPS 中継API** を使い、  
+MDツールでも同じルートで SKU 別在庫を取得する。
+
+**確定仕様:**
+
+| 項目 | 内容 |
+|------|------|
+| エンドポイント | `POST {FS_PROXY_BASE_URL}/check-stock` |
+| 認証 | `Authorization: Bearer {FS_PROXY_TOKEN}` |
+| リクエスト | `{ "productNos": ["1266302"] }` (7桁品番) |
+| レスポンス | `{ "ok": true, "stock": { "1266302789": 3, ... } }` |
+| SKU解析 | 10桁SKU → productNo(先頭7桁) + colorBranchNo(8〜9桁) + sizeBranchNo(10桁目) |
+
+**取得できる項目:**
+
+| フィールド | 取得可否 | 補足 |
+|---|---|---|
+| skuCode (10桁) | ✓ | レスポンスのキー |
+| productNo (7桁) | ✓ | SKU先頭7桁から補完 |
+| colorBranchNo | ✓ | SKU 8〜9桁目から補完 |
+| sizeBranchNo | ✓ | SKU 10桁目から補完 |
+| actualStock | ✓ | `stock[skuCode]` の値 |
+| availableStock | ✓ | actualStock と同値（このルートでは区別なし） |
+| updatedAt | △ | レスポンスにあれば使用、なければ取得日時を記録 |
+| preorderStock | ✗ | このルートでは未対応（次フェーズ） |
+| plannedStock | ✗ | このルートでは未対応（次フェーズ） |
+| goodsUrlCode | ✗ | このルートでは返ってこない |
+| JANコード | ✗ | このルートでは返ってこない |
+
+**MdVariation への反映方針:**
+
+```
+actualStock    = stock[skuCode]
+availableStock = stock[skuCode]
+stockType      = "actual"
+preorderStock  = null
+plannedStock   = null
+updatedAt      = レスポンス値 or 取得日時
+```
 
 **実装済み:**
 
-- `scripts/futureshop/check-stock-api.mjs` — 在庫検索API検証スクリプト
-- `package.json` に `fs:stock:check` スクリプトを追加
-- `.env.local` の必要環境変数: `FUTURESHOP_API_BASE_URL` / `FUTURESHOP_API_KEY` / `FUTURESHOP_SHOP_ID`
-- APIキー・認証情報はコンソールに表示しない設計（マスク処理済み）
-- 1秒待機によるレート制限対策（FutureShop API 1秒1リクエスト制限）
-- マスク済みレスポンスを `tmp/futureshop-stock-response.sample.json` に保存
-- 検出フィールドサマリーを `tmp/futureshop-stock-response.summary.json` に保存
-- `tmp/` は `.gitignore` で管理対象外
-
-**確認したい項目:**
-
-- SKU単位在庫が取得できるか（商品管理番号 / カラー枝番号 / サイズ枝番号）
-- 実在庫 / 予約在庫 / 予定在庫がAPI上で区別できるか
-- 販売可能在庫フィールドの有無
-- 在庫ステータスの有無
+- `scripts/futureshop/check-stock-api.mjs` — ConoHa VPS 中継API 専用に書き換え
+- `--product 1266302`（7桁品番）または `--sku 1266302789`（10桁SKU→先頭7桁変換）
+- 使用環境変数: `FS_PROXY_BASE_URL` / `FS_PROXY_TOKEN`
+- `tmp/futureshop-stock-response.sample.json` — フルレスポンス保存
+- `tmp/futureshop-stock-response.summary.json` — MdVariation 反映形式サマリー
 
 **使い方:**
 ```bash
 npm run fs:stock:check -- --product 1266302
+npm run fs:stock:check -- --sku 1266302789
 ```
 
-**次フェーズ予定:** 検証結果をもとにMDツールへの在庫同期ボタンを追加する
+**今回実装しないこと:**
+
+- MDツール画面への在庫同期ボタン追加
+- localStorage への在庫保存
+- 複数SKU一括取得・在庫更新API・受注API連携
+
+**次フェーズ予定:**
+
+- `FS_PROXY_BASE_URL` / `FS_PROXY_TOKEN` を `.env.local` に設定し実動作を検証
+- MdVariation への actualStock / availableStock 反映ボタンの実装
+- 予約在庫・予定在庫の取得ルート確認（別エンドポイントの可能性あり）
+- goodsUrlCode / JANコードが必要な場合は別ルート（FutureShop 商品検索API）を検討
 
 ---
 

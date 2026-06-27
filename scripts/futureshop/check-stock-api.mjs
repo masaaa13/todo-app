@@ -1,20 +1,19 @@
 /**
- * FutureShop 在庫検索API 検証スクリプト
+ * FutureShop 在庫検索 検証スクリプト（ConoHa VPS 中継API経由）
  *
- * 目的:
- *   - 在庫検索APIのレスポンス構造を確認する
- *   - SKU単位在庫 / 実在庫 / 予約在庫 / 予定在庫が取得できるか検証する
- *   - 結果をマスクして tmp/ に保存する
- *   - APIキーや認証情報はコンソールに表示しない
+ * 確定仕様:
+ *   - ConoHa VPS 中継API  POST /check-stock
+ *   - 入力: 7桁 productNo を productNos 配列で渡す
+ *   - レスポンス: { ok: true, stock: { "1266302789": 3, ... } }
+ *   - SKU(10桁) → productNo(先頭7桁) + colorBranchNo(8〜9桁) + sizeBranchNo(10桁目)
  *
  * 使い方:
- *   node scripts/futureshop/check-stock-api.mjs --product 1266302
- *   npm run fs:stock:check -- --product 1266302
+ *   npm run fs:stock:check -- --product 1266302    # 7桁品番指定
+ *   npm run fs:stock:check -- --sku 1266302789     # 10桁SKU指定(先頭7桁をproductNoに変換)
  *
- * 必要な環境変数 (.env.local に設定):
- *   FUTURESHOP_API_BASE_URL  例: https://xxxx.future-shop.jp/api/v1
- *   FUTURESHOP_API_KEY       futureshop APIキー
- *   FUTURESHOP_SHOP_ID       ショップID（エンドポイント構築に使用）
+ * 必要な環境変数 (.env.local):
+ *   FS_PROXY_BASE_URL   ConoHa VPS 中継APIのベースURL
+ *   FS_PROXY_TOKEN      Bearer 認証トークン
  */
 
 import fs from 'node:fs';
@@ -24,8 +23,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 
-// ── .env.local 読み込み ──────────────────────────────────────────────────────
-// dotenv 未インストールのため手動パース
+// ── .env.local 読み込み ────────────────────────────────────────────────────────
 
 function loadEnvLocal() {
   const envPath = path.join(ROOT, '.env.local');
@@ -44,358 +42,277 @@ function loadEnvLocal() {
 
 loadEnvLocal();
 
-// ── 環境変数チェック ──────────────────────────────────────────────────────────
+// ── 環境変数チェック ─────────────────────────────────────────────────────────
 
-const REQUIRED_ENV = [
-  'FUTURESHOP_API_BASE_URL',
-  'FUTURESHOP_API_KEY',
-  'FUTURESHOP_SHOP_ID',
-];
+const PROXY_BASE_URL = process.env.FS_PROXY_BASE_URL ?? null;
+const PROXY_TOKEN    = process.env.FS_PROXY_TOKEN    ?? null;
 
-const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
-if (missing.length > 0) {
-  console.error('\n[ERROR] 必要な環境変数が設定されていません:');
-  for (const k of missing) {
-    console.error(`  Missing required env: ${k}`);
-  }
-  console.error('\n.env.local に以下を追加してください:');
-  console.error('  FUTURESHOP_API_BASE_URL=https://<shop>.future-shop.jp/api/v1');
-  console.error('  FUTURESHOP_API_KEY=<your-api-key>');
-  console.error('  FUTURESHOP_SHOP_ID=<your-shop-id>');
-  console.error('\nAPIキーの取得方法: futureshop 管理画面 > API設定 を参照');
+console.log('\n[ENV] 環境変数確認:');
+console.log('  FS_PROXY_BASE_URL :', PROXY_BASE_URL ? '設定済み' : '未設定');
+console.log('  FS_PROXY_TOKEN    :', PROXY_TOKEN    ? '設定済み' : '未設定');
+
+if (!PROXY_BASE_URL || !PROXY_TOKEN) {
+  console.error('\n[ERROR] 必要な環境変数が設定されていません。');
+  console.error('.env.local に以下を追加してください:\n');
+  console.error('  FS_PROXY_BASE_URL=<ConoHa VPS 中継APIのベースURL>');
+  console.error('  FS_PROXY_TOKEN=<Bearer トークン>\n');
   process.exit(1);
 }
 
-// ── 引数パース ────────────────────────────────────────────────────────────────
+// ── 引数パース ──────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--product' && argv[i + 1]) args.product = argv[++i];
-    if (argv[i] === '--goods-id' && argv[i + 1]) args.goodsId = argv[++i];
+    if (argv[i] === '--sku'     && argv[i + 1]) args.sku     = argv[++i];
   }
   return args;
 }
 
 const args = parseArgs(process.argv.slice(2));
 
-if (!args.product && !args.goodsId) {
+if (!args.product && !args.sku) {
   console.log(`
 Usage:
-  node scripts/futureshop/check-stock-api.mjs --product <品番>
-  node scripts/futureshop/check-stock-api.mjs --goods-id <商品ID>
+  node scripts/futureshop/check-stock-api.mjs --product <7桁品番>
+  node scripts/futureshop/check-stock-api.mjs --sku <10桁SKU>
 
 例:
-  node scripts/futureshop/check-stock-api.mjs --product 1266302
   npm run fs:stock:check -- --product 1266302
+  npm run fs:stock:check -- --sku 1266302789
   `);
   process.exit(0);
 }
 
-// ── マスキング ────────────────────────────────────────────────────────────────
+// ── SKU / productNo 解析 ────────────────────────────────────────────────────
 
-const MASK_KEYS = new Set([
-  'name', 'customername', 'email', 'tel', 'phone',
-  'address', 'zip', 'postalcode', 'token', 'accesstoken',
-  'refreshtoken', 'password', 'secret', 'authorization',
-  'apikey', 'api_key', 'x-api-key',
-]);
-
-function maskValue(key, value) {
-  if (MASK_KEYS.has(key.toLowerCase())) return '[MASKED]';
-  return value;
-}
-
-function deepMask(obj) {
-  if (Array.isArray(obj)) return obj.map(deepMask);
-  if (obj !== null && typeof obj === 'object') {
-    const result = {};
-    for (const [k, v] of Object.entries(obj)) {
-      result[k] = maskValue(k, deepMask(v));
-    }
-    return result;
-  }
-  return obj;
-}
-
-// ── API リクエスト ────────────────────────────────────────────────────────────
-
-const BASE_URL = process.env.FUTURESHOP_API_BASE_URL.replace(/\/$/, '');
-const API_KEY  = process.env.FUTURESHOP_API_KEY;
-
-/**
- * FutureShop 在庫検索API
- * エンドポイント候補:
- *   GET /stocks?goodsCode=<品番>
- *   GET /stocks?goodsUrlCode=<商品URLコード>
- *   GET /goods/<goodsId>/stocks
- *
- * 実際のエンドポイントはAPI仕様書に合わせて調整してください。
- */
-async function fetchStockByProduct(productNo) {
-  // 商品URLコード = 品番 として試みる（FutureShopでは通常一致）
-  const endpoints = [
-    `${BASE_URL}/stocks?goodsUrlCode=${encodeURIComponent(productNo)}`,
-    `${BASE_URL}/stocks?goodsCode=${encodeURIComponent(productNo)}`,
-    `${BASE_URL}/goods/${encodeURIComponent(productNo)}/stocks`,
-    `${BASE_URL}/goodsStock?goodsUrlCode=${encodeURIComponent(productNo)}`,
-  ];
-
-  const headers = {
-    'Authorization': `Bearer ${API_KEY}`,
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
+function parseSku(sku10) {
+  const s = String(sku10).replace(/\D/g, '');
+  if (s.length !== 10) return null;
+  return {
+    productNo:     s.slice(0, 7),
+    colorBranchNo: s.slice(7, 9),
+    sizeBranchNo:  s.slice(9, 10),
   };
-
-  let lastError = null;
-
-  for (const url of endpoints) {
-    // URLにAPIキーが入らないようにログ用URLを生成
-    const safeUrl = url.replace(API_KEY, '[MASKED]');
-    console.log(`\n[INFO] 試行中: ${safeUrl}`);
-
-    try {
-      // 1秒待機（FutureShop APIは1秒1リクエスト制限）
-      await new Promise((r) => setTimeout(r, 1100));
-
-      const res = await fetch(url, { method: 'GET', headers });
-
-      console.log(`[INFO] ステータス: ${res.status} ${res.statusText}`);
-
-      if (res.status === 404) {
-        console.log('[INFO] 404 - このエンドポイントは存在しない可能性があります。次を試みます。');
-        continue;
-      }
-
-      if (res.status === 401 || res.status === 403) {
-        console.error('[ERROR] 認証エラー。APIキーまたはショップIDを確認してください。');
-        return { endpoint: safeUrl, status: res.status, error: 'Unauthorized / Forbidden' };
-      }
-
-      const text = await res.text();
-      let json = null;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        console.log('[WARN] レスポンスがJSONではありません。最初の200文字:');
-        console.log(text.slice(0, 200));
-        return { endpoint: safeUrl, status: res.status, rawText: text.slice(0, 500), json: null };
-      }
-
-      return { endpoint: safeUrl, status: res.status, json };
-
-    } catch (err) {
-      lastError = err;
-      console.error(`[ERROR] リクエスト失敗: ${err.message}`);
-    }
-  }
-
-  return { error: lastError?.message ?? '全エンドポイント失敗', json: null };
 }
 
-async function fetchStockByGoodsId(goodsId) {
-  const url = `${BASE_URL}/goods/${encodeURIComponent(goodsId)}/stocks`;
-  const safeUrl = url.replace(API_KEY, '[MASKED]');
-  console.log(`\n[INFO] goodsId 指定: ${safeUrl}`);
+let productNo;
+let inputSku = null;
 
-  await new Promise((r) => setTimeout(r, 1100));
+if (args.sku) {
+  const parsed = parseSku(args.sku);
+  if (!parsed) {
+    console.error(`[ERROR] SKUは10桁の数字を指定してください: "${args.sku}"`);
+    process.exit(1);
+  }
+  productNo = parsed.productNo;
+  inputSku  = args.sku;
+  console.log(`\n[INPUT] SKU ${args.sku} → productNo: ${productNo} / colorBranchNo: ${parsed.colorBranchNo} / sizeBranchNo: ${parsed.sizeBranchNo}`);
+} else {
+  productNo = String(args.product).replace(/\D/g, '');
+  if (productNo.length !== 7) {
+    console.error(`[ERROR] productNo は7桁の数字を指定してください: "${args.product}"`);
+    process.exit(1);
+  }
+  console.log(`\n[INPUT] productNo: ${productNo}`);
+}
 
+// ── マスキング ───────────────────────────────────────────────────────────────
+
+function maskStr(s) {
+  let r = String(s);
+  if (PROXY_BASE_URL) r = r.replace(new RegExp(PROXY_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[MASKED_URL]');
+  if (PROXY_TOKEN)    r = r.replace(new RegExp(PROXY_TOKEN.replace(   /[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[MASKED]');
+  return r;
+}
+
+// ── ConoHa VPS 中継API 呼び出し ──────────────────────────────────────────────
+
+async function fetchStock(pNo) {
+  const endpoint = '/check-stock';
+  const payload  = { productNos: [pNo] };
+
+  console.log(`\n[API] POST ${maskStr(PROXY_BASE_URL)}${endpoint}`);
+  console.log(`[API] payload: ${JSON.stringify(payload)}`);
+  console.log('[API] Authorization: Bearer [MASKED]');
+
+  const res = await fetch(`${PROXY_BASE_URL}${endpoint}`, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${PROXY_TOKEN}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  console.log(`[API] ステータス: ${res.status} ${res.statusText}`);
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    console.log(`[API] エラーレスポンス: ${maskStr(text.slice(0, 300))}`);
+    return { ok: false, status: res.status, json: null };
+  }
+
+  let json = null;
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Accept': 'application/json',
-      },
-    });
-
-    console.log(`[INFO] ステータス: ${res.status} ${res.statusText}`);
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch { /* noop */ }
-    return { endpoint: safeUrl, status: res.status, json };
-  } catch (err) {
-    return { error: err.message, json: null };
+    json = JSON.parse(text);
+  } catch {
+    console.log('[WARN] レスポンスがJSON形式ではありません');
+    return { ok: false, status: res.status, json: null };
   }
+
+  return { ok: true, status: res.status, json };
 }
 
-// ── サマリー生成 ──────────────────────────────────────────────────────────────
+// ── SKU Map → candidates 変換 ────────────────────────────────────────────────
 
-function detectFields(json) {
-  const flat = JSON.stringify(json).toLowerCase();
+function buildCandidates(stockMap, baseProductNo, fetchedAt) {
+  if (!stockMap || typeof stockMap !== 'object') return [];
 
-  const candidates = [];
-  const notes = [];
+  return Object.entries(stockMap).map(([skuCode, qty]) => {
+    const parsed = parseSku(skuCode);
+    const actualStock = typeof qty === 'number' ? qty : null;
 
-  // FutureShopの在庫フィールド候補キー名
-  const SKU_CANDIDATES  = ['goodsmanagementno', 'managementno', 'skucode', 'goodsmanagementnumber', 'variationcode'];
-  const VAR_CANDIDATES  = ['colorbranch', 'colorno', 'sizebranch', 'sizeno', 'variationno', 'branchno'];
-  const STOCK_CANDIDATES = ['stock', 'stockqty', 'stockcount', 'quantity', 'inventoryqty'];
-  const PREORDER_CANDIDATES = ['preorder', 'reservestock', 'reserveqty', 'yoyakustock'];
-  const PLANNED_CANDIDATES  = ['plannedstock', 'plannedqty', 'yoteistock', 'futurestock'];
-  const AVAIL_CANDIDATES    = ['availablestock', 'availableqty', 'salablestock', 'saleablestock'];
-  const STATUS_CANDIDATES   = ['stockstatus', 'salestatus', 'inventorystatus', 'stockstatustype'];
-
-  const detected = {
-    hasSkuCode:         SKU_CANDIDATES.some((k) => flat.includes(k)),
-    hasVariationBranch: VAR_CANDIDATES.some((k) => flat.includes(k)),
-    hasActualStock:     STOCK_CANDIDATES.some((k) => flat.includes(k)),
-    hasPreorderStock:   PREORDER_CANDIDATES.some((k) => flat.includes(k)),
-    hasPlannedStock:    PLANNED_CANDIDATES.some((k) => flat.includes(k)),
-    hasAvailableStock:  AVAIL_CANDIDATES.some((k) => flat.includes(k)),
-    hasStockStatus:     STATUS_CANDIDATES.some((k) => flat.includes(k)),
-  };
-
-  // フィールドヒント収集（実際のキー名を探す）
-  function findMatchingKeys(obj, candidates, depth = 0) {
-    if (depth > 5 || !obj || typeof obj !== 'object') return [];
-    const found = [];
-    for (const [k, v] of Object.entries(obj)) {
-      if (candidates.some((c) => k.toLowerCase().includes(c))) found.push(k);
-      if (typeof v === 'object') found.push(...findMatchingKeys(v, candidates, depth + 1));
-    }
-    return [...new Set(found)];
-  }
-
-  // バリエーション配列を探す
-  const varArrayKey = findArrayKey(json);
-  const variations = varArrayKey ? (json[varArrayKey] ?? []) : (Array.isArray(json) ? json : []);
-
-  for (const v of variations.slice(0, 5)) {
-    if (typeof v !== 'object' || !v) continue;
-
-    const skuKey   = findMatchingKeys(v, SKU_CANDIDATES)[0];
-    const colorKey = findMatchingKeys(v, ['colorbranch', 'colorno', 'colorbranchno'])[0];
-    const sizeKey  = findMatchingKeys(v, ['sizebranch', 'sizeno', 'sizebranchno'])[0];
-    const stockKey = findMatchingKeys(v, STOCK_CANDIDATES)[0];
-    const preKey   = findMatchingKeys(v, PREORDER_CANDIDATES)[0];
-    const planKey  = findMatchingKeys(v, PLANNED_CANDIDATES)[0];
-    const availKey = findMatchingKeys(v, AVAIL_CANDIDATES)[0];
-
-    const actualStock  = stockKey ? (v[stockKey] ?? null) : null;
-    const preordStock  = preKey   ? (v[preKey]   ?? null) : null;
-    const plannedStock = planKey  ? (v[planKey]  ?? null) : null;
-    const availStock   = availKey ? (v[availKey] ?? null) : null;
-
-    // 在庫区分仮判定
-    let stockType = 'unknown';
-    const hasActual  = actualStock  != null && actualStock  > 0;
-    const hasPreord  = preordStock  != null && preordStock  > 0;
-    const hasPlanned = plannedStock != null && plannedStock > 0;
-    const count = [hasActual, hasPreord, hasPlanned].filter(Boolean).length;
-    if (count >= 2)       stockType = 'mixed';
-    else if (hasPreord)   stockType = 'preorder';
-    else if (hasPlanned)  stockType = 'planned';
-    else if (hasActual)   stockType = 'actual';
-    else if (actualStock === 0) stockType = 'actual';
-
-    candidates.push({
-      productNo:     args.product ?? args.goodsId,
-      skuCode:       skuKey   ? v[skuKey]   : null,
-      colorBranchNo: colorKey ? v[colorKey] : null,
-      sizeBranchNo:  sizeKey  ? v[sizeKey]  : null,
+    return {
+      productNo:     parsed?.productNo    ?? baseProductNo,
+      skuCode,
+      colorBranchNo: parsed?.colorBranchNo ?? null,
+      sizeBranchNo:  parsed?.sizeBranchNo  ?? null,
       actualStock,
-      preorderStock: preordStock,
-      plannedStock,
-      availableStock: availStock,
-      stockType,
-      rawFieldHints: {
-        skuCode:       skuKey   ?? '未検出',
-        actualStock:   stockKey ?? '未検出',
-        preorderStock: preKey   ?? '未検出',
-        plannedStock:  planKey  ?? '未検出',
-        availableStock: availKey ?? '未検出',
-      },
-    });
-  }
-
-  if (!detected.hasPreorderStock) notes.push('予約在庫フィールドはレスポンス上で未確認');
-  if (!detected.hasPlannedStock)  notes.push('予定在庫フィールドはレスポンス上で未確認');
-  if (!detected.hasSkuCode)       notes.push('SKUコード/商品管理番号フィールドが未確認 — FutureShopの実際のキー名を要確認');
-  if (candidates.length === 0)    notes.push('バリエーション配列が見つかりませんでした。レスポンス構造を確認してください');
-
-  return { detected, candidates, notes };
+      preorderStock:  null,
+      plannedStock:   null,
+      availableStock: actualStock,
+      stockType:      'actual',
+      updatedAt:      null,
+      fetchedAt,
+    };
+  });
 }
 
-function findArrayKey(obj) {
-  if (!obj || typeof obj !== 'object') return null;
-  for (const [k, v] of Object.entries(obj)) {
-    if (Array.isArray(v) && v.length > 0) return k;
-  }
-  return null;
-}
-
-// ── tmp ディレクトリ確保 ──────────────────────────────────────────────────────
+// ── tmp ディレクトリ確保 ────────────────────────────────────────────────────
 
 const TMP_DIR = path.join(ROOT, 'tmp');
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
-// ── メイン実行 ────────────────────────────────────────────────────────────────
+// ── メイン ──────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('\n====== FutureShop 在庫検索API 検証スクリプト ======');
-  console.log(`入力: product=${args.product ?? '—'} / goodsId=${args.goodsId ?? '—'}`);
-  console.log('APIキーはマスクされています。コンソールには表示されません。\n');
+  console.log('\n====== FutureShop 在庫取得 検証スクリプト（ConoHa VPS 中継API）======');
+  console.log('認証情報はコンソールに表示されません。\n');
+
+  const fetchedAt = new Date().toISOString();
 
   let result;
-  if (args.goodsId) {
-    result = await fetchStockByGoodsId(args.goodsId);
-  } else {
-    result = await fetchStockByProduct(args.product);
+  try {
+    result = await fetchStock(productNo);
+  } catch (err) {
+    console.error(`\n[ERROR] リクエスト失敗: ${maskStr(String(err.message))}`);
+    process.exit(1);
   }
 
-  // レスポンス全体をマスクして保存
-  const maskedFull = result.json ? deepMask(result.json) : result;
-  const samplePath = path.join(TMP_DIR, 'futureshop-stock-response.sample.json');
-  fs.writeFileSync(samplePath, JSON.stringify(maskedFull, null, 2), 'utf8');
-  console.log(`\n[SAVED] フルレスポンス (マスク済み): ${samplePath}`);
+  // ── レスポンス検証 ──────────────────────────────────────────────────────
+  const stockMap   = result.json?.stock ?? null;
+  const apiOk      = result.json?.ok    === true;
+  const updatedAt  = result.json?.updatedAt ?? null;
 
-  // サマリー生成
-  const { detected, candidates, notes } = result.json
-    ? detectFields(result.json)
-    : { detected: {}, candidates: [], notes: ['APIレスポンスがJSONではないか、エラーが発生しました'] };
+  if (!apiOk || !stockMap) {
+    console.log('[WARN] json.ok が true でないか、json.stock が存在しません');
+  } else {
+    console.log(`[OK] json.ok = true / SKUキー数: ${Object.keys(stockMap).length}`);
+  }
+
+  // ── candidates 生成 ──────────────────────────────────────────────────────
+  const candidates = buildCandidates(
+    stockMap,
+    productNo,
+    updatedAt ?? fetchedAt,
+  );
+
+  // updatedAt がレスポンスにある場合は candidates に反映
+  if (updatedAt) {
+    for (const c of candidates) c.updatedAt = updatedAt;
+  }
+
+  // ── フィールド検出フラグ ────────────────────────────────────────────────
+  const hasStock = candidates.some(c => c.actualStock != null);
+  const detected = {
+    hasSkuCode:         candidates.some(c => c.skuCode        != null),
+    hasProductNo:       candidates.some(c => c.productNo      != null),
+    hasColorBranchNo:   candidates.some(c => c.colorBranchNo  != null),
+    hasSizeBranchNo:    candidates.some(c => c.sizeBranchNo   != null),
+    hasActualStock:     hasStock,
+    hasPreorderStock:   false,
+    hasPlannedStock:    false,
+    hasAvailableStock:  hasStock,
+    hasUpdatedAt:       !!updatedAt,
+  };
+
+  // ── フルレスポンス保存（マスク不要な項目のみ） ───────────────────────────
+  const samplePath = path.join(TMP_DIR, 'futureshop-stock-response.sample.json');
+  const sampleData = {
+    ok:      result.json?.ok      ?? null,
+    stock:   result.json?.stock   ?? null,
+    updatedAt: result.json?.updatedAt ?? null,
+    _meta: { httpStatus: result.status, fetchedAt },
+  };
+  fs.writeFileSync(samplePath, JSON.stringify(sampleData, null, 2), 'utf8');
+  console.log(`\n[SAVED] フルレスポンス: ${samplePath}`);
+
+  // ── サマリー生成 ─────────────────────────────────────────────────────────
+  const notes = [
+    'ConoHa VPS 中継API POST /check-stock を使用',
+    '入力は7桁productNo。SKU指定時は先頭7桁からproductNoを推定',
+    'レスポンスは skuNo => 在庫数 のMap',
+    '予約在庫・予定在庫の区別はこのルートでは未確認 — 次フェーズで確認',
+  ];
+  if (!apiOk)    notes.push('json.ok が false またはレスポンスエラー');
+  if (!stockMap) notes.push('json.stock が存在しませんでした — エンドポイントまたはpayloadを確認');
 
   const summary = {
     input: {
       product: args.product ?? null,
-      goodsId: args.goodsId ?? null,
+      sku:     inputSku,
     },
-    requestInfo: {
-      endpoint: result.endpoint ?? null,
-      httpStatus: result.status ?? null,
+    source: {
+      type:     'fs-proxy',
+      endpoint: '/check-stock',
+      routeVar: 'FS_PROXY_BASE_URL / FS_PROXY_TOKEN',
     },
     detectedFields: detected,
     candidates,
     notes,
-    savedAt: new Date().toISOString(),
+    savedAt: fetchedAt,
   };
 
   const summaryPath = path.join(TMP_DIR, 'futureshop-stock-response.summary.json');
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf8');
   console.log(`[SAVED] サマリー: ${summaryPath}`);
 
-  // コンソール出力
+  // ── コンソール出力 ───────────────────────────────────────────────────────
   console.log('\n====== 検出フィールド ======');
   for (const [k, v] of Object.entries(detected)) {
     console.log(`  ${v ? '✓' : '✗'} ${k}`);
   }
 
   if (candidates.length > 0) {
-    console.log('\n====== SKU候補 (最大5件) ======');
+    console.log('\n====== SKU候補 ======');
     for (const c of candidates) {
-      console.log(JSON.stringify(c, null, 2));
+      const { fetchedAt: _f, ...display } = c;
+      console.log(JSON.stringify(display, null, 2));
     }
+  } else {
+    console.log('\n[INFO] SKU候補なし — json.stock が空か取得失敗');
   }
 
-  if (notes.length > 0) {
-    console.log('\n====== 注記 ======');
-    for (const n of notes) console.log(`  - ${n}`);
-  }
+  console.log('\n====== 注記 ======');
+  for (const n of notes) console.log(`  - ${n}`);
 
   console.log('\n====== 完了 ======\n');
 }
 
 main().catch((err) => {
-  console.error('[FATAL]', err.message);
+  console.error('[FATAL]', maskStr(String(err.message)));
   process.exit(1);
 });
