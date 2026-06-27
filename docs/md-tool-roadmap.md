@@ -600,40 +600,132 @@ npm run fs:products:check -- --products 1266302,1266303
 
 VPS `/check-products` が現在 `productNos` 必須のため、条件検索は VPS 対応後に利用可能になります。
 
-必要な VPS 変更:
+---
+
+### VPS 変更コード
+
+`/opt/fs-proxy/server.js` の `/check-products` ハンドラに条件検索モードを追加します。  
+エンドポイントは既存と同じ `/admin-api/v1/products` を使います（新エンドポイントは不要）。
 
 ```javascript
-// productNos が未指定の場合は条件検索モード
+// /check-products ハンドラ内（既存の productNos 処理の前に追加）
+
 const isSearchMode = !body.productNos && (
-  body.updateDateStart || body.updateDateEnd || body.mainGroupUrl || body.janCode
+  body.updateDateStart || body.updateDateEnd ||
+  body.createDateStart || body.createDateEnd ||
+  body.mainGroupUrl    || body.janCode
 );
 
 if (isSearchMode) {
-  // FutureShop 商品検索APIを呼び出す
   const params = new URLSearchParams();
   if (body.updateDateStart) params.set('updateDateStart', body.updateDateStart);
   if (body.updateDateEnd)   params.set('updateDateEnd',   body.updateDateEnd);
+  if (body.createDateStart) params.set('createDateStart', body.createDateStart);
+  if (body.createDateEnd)   params.set('createDateEnd',   body.createDateEnd);
   if (body.mainGroupUrl)    params.set('mainGroupUrl',    body.mainGroupUrl);
   if (body.janCode)         params.set('janCode',         body.janCode);
+  if (Array.isArray(body.types) && body.types.length > 0) {
+    body.types.forEach((t) => params.append('types', t));
+  }
   params.set('count', String(body.count ?? 50));
   if (body.cursor) params.set('cursor', body.cursor);
 
-  const fsRes = await fetch(`${FS_API_BASE}/products/search?${params}`, { headers: fsAuthHeaders });
+  // 既存の getToken() / fsAuthHeaders を流用
+  const fsRes = await fetch(
+    `https://${FS_API_DOMAIN}/admin-api/v1/products?${params}`,
+    { headers: fsAuthHeaders }
+  );
   const fsData = await fsRes.json();
 
-  // 既存フォーマットに変換して返す
+  // 既存の convertProduct() を流用して返す
+  const products = (fsData.productList ?? []).map(convertProduct);
   return res.json({
     ok: true,
-    products: fsData.productList.map(convertProduct),
-    productCount: fsData.productList.length,
-    totalCount: fsData.totalCount,
-    nextUrl: fsData.nextUrl ?? null,
+    products,
+    productCount: products.length,
+    totalCount:   fsData.totalCount ?? products.length,
+    nextUrl:      fsData.nextUrl ?? null,
   });
 }
+
+// productNos がある場合は従来処理（変更なし）
 ```
+
+**渡すパラメータ（FutureShop API正式名）:**
+
+| パラメータ | 説明 | 形式 |
+|---|---|---|
+| `updateDateStart` | 更新日From | `yyyy-mm-ddT00:00:00` |
+| `updateDateEnd` | 更新日To | `yyyy-mm-ddT23:59:59` |
+| `createDateStart` | 登録日From | `yyyy-mm-ddT00:00:00` |
+| `createDateEnd` | 登録日To | `yyyy-mm-ddT23:59:59` |
+| `mainGroupUrl` | メイングループURLコード | 文字列 |
+| `janCode` | JANコード | 文字列 |
+| `types` | 取得情報種別 | 配列（複数 append） |
+| `count` | 取得件数 | 数値（省略時 50） |
+| `cursor` | 次ページカーソル | 文字列 |
+
+**渡さないパラメータ（クライアント側フィルタ）:**
+
+- `productNoPrefix` → Vercel / フロント側で取得後に `startsWith` フィルタ
+- `visible` → Vercel / フロント側で取得後に一致フィルタ
+
+---
+
+### VPS 対応手順
+
+```bash
+# 1. 作業ディレクトリへ移動
+cd /opt/fs-proxy
+
+# 2. バックアップ作成
+cp server.js server.js.bak-$(date +%Y%m%d%H%M%S)
+
+# 3. server.js を修正
+#    → isSearchMode ブロックを /check-products ハンドラに追加（上記コード参照）
+
+# 4. 構文チェック
+node --check server.js
+
+# 5. 既存プロセスを停止
+pkill -f "node /opt/fs-proxy/server.js"
+
+# 6. バックグラウンド起動
+nohup node /opt/fs-proxy/server.js > /opt/fs-proxy/server.log 2>&1 &
+
+# 7. ヘルスチェック
+curl -s http://localhost:{PORT}/health
+
+# 8. 既存 /check-stock の動作確認
+curl -s -X POST http://localhost:{PORT}/check-stock \
+  -H "Authorization: Bearer {FS_PROXY_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"productNos":["1266302"]}'
+
+# 9. 既存 productNos 指定の /check-products 動作確認
+curl -s -X POST http://localhost:{PORT}/check-products \
+  -H "Authorization: Bearer {FS_PROXY_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"productNos":["1266302"],"types":["variation","image","comment","preorder","plannedStock"]}'
+
+# 10. 条件検索モードの /check-products 動作確認
+curl -s -X POST http://localhost:{PORT}/check-products \
+  -H "Authorization: Bearer {FS_PROXY_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "updateDateStart":"2026-06-01T00:00:00",
+    "updateDateEnd":"2026-06-28T23:59:59",
+    "types":["variation","image","comment","preorder","plannedStock"],
+    "count":50
+  }'
+```
+
+> **注意:** `{PORT}` / `{FS_PROXY_TOKEN}` は実際の値に置き換えてください（値はここに記載しない）。  
+> 手順 9・10 は Vercel 経由（`/api/check-products`）でも同様に動作確認可能。
 
 FutureShop API正式パラメータ（確認済み）:
 - 更新日範囲: `updateDateStart` / `updateDateEnd`（`yyyy-mm-ddT00:00:00` 形式）
+- 登録日範囲: `createDateStart` / `createDateEnd`（`yyyy-mm-ddT00:00:00` 形式）
 - メイングループ: `mainGroupUrl`
 - JANコード: `janCode`
 - ページング: `count`（件数）/ `cursor`（次ページカーソル）
