@@ -16,32 +16,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const {
     productNos,
-    productNoPrefix,
-    dateLastUpdatedFrom,
-    dateLastUpdatedTo,
-    visible,
+    updateDateStart,
+    updateDateEnd,
+    mainGroupUrl,
+    janCode,
+    count,
+    cursor,
     types,
   } = req.body as {
     productNos?: unknown;
-    productNoPrefix?: unknown;
-    dateLastUpdatedFrom?: unknown;
-    dateLastUpdatedTo?: unknown;
-    visible?: unknown;
+    updateDateStart?: unknown;
+    updateDateEnd?: unknown;
+    mainGroupUrl?: unknown;
+    janCode?: unknown;
+    count?: unknown;
+    cursor?: unknown;
     types?: unknown;
   };
 
   const requestTypes = Array.isArray(types) && types.length > 0 ? types : DEFAULT_TYPES;
 
-  // Condition search mode when productNos is absent and at least one condition is specified
   const isSearchMode = !productNos && (
-    productNoPrefix !== undefined ||
-    dateLastUpdatedFrom !== undefined ||
-    dateLastUpdatedTo !== undefined ||
-    visible !== undefined
+    updateDateStart !== undefined ||
+    updateDateEnd !== undefined ||
+    mainGroupUrl !== undefined ||
+    janCode !== undefined
   );
 
   if (!isSearchMode) {
-    // Existing validation: productNos required
     if (!Array.isArray(productNos)) {
       return res.status(400).json({ error: 'productNos must be an array' });
     }
@@ -55,29 +57,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Each productNo must be a 7-digit number' });
     }
   } else {
-    // Condition search validation
-    if (productNoPrefix !== undefined && typeof productNoPrefix !== 'string') {
-      return res.status(400).json({ error: 'productNoPrefix must be a string' });
+    if (updateDateStart !== undefined && typeof updateDateStart !== 'string') {
+      return res.status(400).json({ error: 'updateDateStart must be a string' });
     }
-    if (dateLastUpdatedFrom !== undefined && typeof dateLastUpdatedFrom !== 'string') {
-      return res.status(400).json({ error: 'dateLastUpdatedFrom must be a string' });
+    if (updateDateEnd !== undefined && typeof updateDateEnd !== 'string') {
+      return res.status(400).json({ error: 'updateDateEnd must be a string' });
     }
-    if (dateLastUpdatedTo !== undefined && typeof dateLastUpdatedTo !== 'string') {
-      return res.status(400).json({ error: 'dateLastUpdatedTo must be a string' });
+    if (mainGroupUrl !== undefined && typeof mainGroupUrl !== 'string') {
+      return res.status(400).json({ error: 'mainGroupUrl must be a string' });
     }
-    if (visible !== undefined && typeof visible !== 'boolean') {
-      return res.status(400).json({ error: 'visible must be a boolean' });
+    if (janCode !== undefined && typeof janCode !== 'string') {
+      return res.status(400).json({ error: 'janCode must be a string' });
     }
   }
 
-  // Build request body for VPS
   const requestBody = isSearchMode
     ? {
-        productNoPrefix:       typeof productNoPrefix === 'string'       ? productNoPrefix       : undefined,
-        dateLastUpdatedFrom:   typeof dateLastUpdatedFrom === 'string'   ? dateLastUpdatedFrom   : undefined,
-        dateLastUpdatedTo:     typeof dateLastUpdatedTo === 'string'     ? dateLastUpdatedTo     : undefined,
-        visible:               typeof visible === 'boolean'              ? visible               : undefined,
-        types:                 requestTypes,
+        updateDateStart: typeof updateDateStart === 'string' ? updateDateStart : undefined,
+        updateDateEnd:   typeof updateDateEnd   === 'string' ? updateDateEnd   : undefined,
+        mainGroupUrl:    typeof mainGroupUrl    === 'string' ? mainGroupUrl    : undefined,
+        janCode:         typeof janCode         === 'string' ? janCode         : undefined,
+        count:           typeof count           === 'number' ? count           : 50,
+        cursor:          typeof cursor          === 'string' ? cursor          : undefined,
+        types:           requestTypes,
       }
     : { productNos, types: requestTypes };
 

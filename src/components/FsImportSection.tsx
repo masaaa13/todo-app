@@ -38,6 +38,7 @@ type VpsResponse = {
   products: VpsProduct[];
   productCount: number;
   totalCount: number;
+  nextUrl?: string;
   warning?: string;
 };
 
@@ -47,6 +48,7 @@ type Mode = 'manual' | 'search';
 
 type SearchForm = {
   productNoPrefix: string;
+  mainGroupUrl: string;
   dateFrom: string;
   dateTo: string;
   visible: 'all' | 'public' | 'private';
@@ -223,6 +225,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   // Condition search mode
   const [searchForm, setSearchForm] = useState<SearchForm>({
     productNoPrefix: '',
+    mainGroupUrl: '',
     dateFrom: '',
     dateTo: '',
     visible: 'all',
@@ -243,12 +246,18 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   // Derived
   const parsedInput       = parseInput(inputText);
   const hasValid          = parsedInput.valid.length > 0;
-  const hasSearchCondition = !!(
-    searchForm.productNoPrefix.trim() ||
+  const hasApiCondition = !!(
     searchForm.dateFrom ||
     searchForm.dateTo ||
-    searchForm.visible !== 'all'
+    searchForm.mainGroupUrl.trim()
   );
+
+  let dateRangeError = '';
+  if (searchForm.dateFrom && searchForm.dateTo) {
+    const diff = (new Date(searchForm.dateTo).getTime() - new Date(searchForm.dateFrom).getTime()) / (1000 * 60 * 60 * 24);
+    if (diff < 0) dateRangeError = '更新日Fromは更新日To以前の日付を指定してください';
+    else if (diff > 31) dateRangeError = '更新日の範囲は31日以内で指定してください';
+  }
 
   const clearFetchState = () => {
     setFetchedProducts([]);
@@ -310,7 +319,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   // ── Condition search fetch ──────────────────────────────────────────────────
 
   const handleSearchFetch = useCallback(async () => {
-    if (!hasSearchCondition) return;
+    if (!hasApiCondition || dateRangeError) return;
 
     setFetchStatus('loading');
     setFetchError('');
@@ -321,16 +330,10 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setSendStatus('idle');
     setSyncError('');
 
-    const visibleParam =
-      searchForm.visible === 'public'  ? true  :
-      searchForm.visible === 'private' ? false :
-      undefined;
-
-    const body: Record<string, unknown> = { types: DEFAULT_TYPES };
-    if (searchForm.productNoPrefix.trim()) body.productNoPrefix = searchForm.productNoPrefix.trim();
-    if (searchForm.dateFrom)              body.dateLastUpdatedFrom = searchForm.dateFrom;
-    if (searchForm.dateTo)                body.dateLastUpdatedTo   = searchForm.dateTo;
-    if (visibleParam !== undefined)       body.visible = visibleParam;
+    const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
+    if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
+    if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
+    if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
 
     try {
       const res = await fetch('/api/check-products', {
@@ -345,16 +348,25 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
 
-      const products = data.products ?? [];
+      let products = data.products ?? [];
+
+      // Client-side filters (not sent to API)
+      const prefix = searchForm.productNoPrefix.trim();
+      if (prefix) products = products.filter((p) => p.productNo.startsWith(prefix));
+      if (searchForm.visible !== 'all') {
+        const wantPublic = searchForm.visible === 'public';
+        products = products.filter((p) => p.visible === wantPublic);
+      }
+
       setFetchedProducts(products);
       setSelectedNos(new Set(products.map((p) => p.productNo)));
-      if (data.totalCount > products.length) setHasMore(true);
+      if (data.nextUrl) setHasMore(true);
       setFetchStatus('idle');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error');
       setFetchStatus('error');
     }
-  }, [searchForm, hasSearchCondition]);
+  }, [searchForm, hasApiCondition, dateRangeError]);
 
   // ── Selection ──────────────────────────────────────────────────────────────
 
@@ -514,17 +526,6 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       {mode === 'search' && (
         <div className={styles.searchForm}>
           <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>商品番号（前方一致）</span>
-            <input
-              type="text"
-              className={styles.searchInput}
-              value={searchForm.productNoPrefix}
-              onChange={(e) => setSearchForm((f) => ({ ...f, productNoPrefix: e.target.value }))}
-              placeholder="例: 1266"
-              maxLength={7}
-            />
-          </div>
-          <div className={styles.searchRow}>
             <span className={styles.searchLabel}>更新日 From</span>
             <input
               type="date"
@@ -542,8 +543,32 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               onChange={(e) => setSearchForm((f) => ({ ...f, dateTo: e.target.value }))}
             />
           </div>
+          {dateRangeError && (
+            <div className={styles.errorMsg}>{dateRangeError}</div>
+          )}
           <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>公開状態</span>
+            <span className={styles.searchLabel}>メイングループURLコード</span>
+            <input
+              type="text"
+              className={styles.searchInput}
+              value={searchForm.mainGroupUrl}
+              onChange={(e) => setSearchForm((f) => ({ ...f, mainGroupUrl: e.target.value }))}
+              placeholder="例: tops"
+            />
+          </div>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>商品番号（取得結果内で絞り込み）</span>
+            <input
+              type="text"
+              className={styles.searchInput}
+              value={searchForm.productNoPrefix}
+              onChange={(e) => setSearchForm((f) => ({ ...f, productNoPrefix: e.target.value }))}
+              placeholder="例: 1266"
+              maxLength={7}
+            />
+          </div>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>公開状態（取得結果内で絞り込み）</span>
             <div className={styles.radioGroup}>
               {(['all', 'public', 'private'] as const).map((v) => (
                 <label key={v} className={styles.radioLabel}>
@@ -559,12 +584,9 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               ))}
             </div>
           </div>
-          {!hasSearchCondition && (
-            <div className={styles.parsedHint}>条件を1つ以上入力してください</div>
+          {!hasApiCondition && (
+            <div className={styles.parsedHint}>更新日またはメイングループURLコードを入力してください</div>
           )}
-          <div className={styles.searchNote}>
-            ※ 条件検索は VPS 側の対応が完了次第、利用可能になります
-          </div>
         </div>
       )}
 
@@ -584,7 +606,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
             type="button"
             className={styles.fetchBtn}
             onClick={handleSearchFetch}
-            disabled={!hasSearchCondition || fetchStatus === 'loading'}
+            disabled={!hasApiCondition || !!dateRangeError || fetchStatus === 'loading'}
           >
             {fetchStatus === 'loading' ? '検索中...' : '条件で検索'}
           </button>

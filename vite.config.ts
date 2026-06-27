@@ -105,22 +105,24 @@ export default defineConfig({
               try {
                 const parsed = JSON.parse(body) as {
                   productNos?: unknown;
-                  productNoPrefix?: unknown;
-                  dateLastUpdatedFrom?: unknown;
-                  dateLastUpdatedTo?: unknown;
-                  visible?: unknown;
+                  updateDateStart?: unknown;
+                  updateDateEnd?: unknown;
+                  mainGroupUrl?: unknown;
+                  janCode?: unknown;
+                  count?: unknown;
+                  cursor?: unknown;
                   types?: unknown;
                 };
-                const { productNos, productNoPrefix, dateLastUpdatedFrom, dateLastUpdatedTo, visible } = parsed;
+                const { productNos, updateDateStart, updateDateEnd, mainGroupUrl, janCode, count, cursor } = parsed;
                 const types = Array.isArray(parsed.types) && parsed.types.length > 0
                   ? parsed.types
                   : ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
 
                 const isSearchMode = !productNos && (
-                  productNoPrefix !== undefined ||
-                  dateLastUpdatedFrom !== undefined ||
-                  dateLastUpdatedTo !== undefined ||
-                  visible !== undefined
+                  updateDateStart !== undefined ||
+                  updateDateEnd !== undefined ||
+                  mainGroupUrl !== undefined ||
+                  janCode !== undefined
                 );
 
                 if (!isSearchMode) {
@@ -137,7 +139,7 @@ export default defineConfig({
                 }
 
                 const requestBody = isSearchMode
-                  ? { productNoPrefix, dateLastUpdatedFrom, dateLastUpdatedTo, visible, types }
+                  ? { updateDateStart, updateDateEnd, mainGroupUrl, janCode, count: typeof count === 'number' ? count : 50, cursor, types }
                   : { productNos, types };
 
                 const upstream = await fetch(`${proxyBase}/check-products`, {

@@ -575,8 +575,10 @@ npm run fs:products:check -- --products 1266302,1266303
 
 - **条件検索モードUI:**
   - 「品番指定」「条件検索」モード切替タブを追加
-  - 条件検索フォーム: 商品番号（前方一致）/ 更新日From / 更新日To / 公開状態（すべて/公開中/非公開）
-  - 条件が1つ以上入力されると検索ボタンが活性化
+  - API検索条件: 更新日From（`updateDateStart`）/ 更新日To（`updateDateEnd`）/ メイングループURLコード（`mainGroupUrl`）
+  - 取得結果内絞り込み（クライアント側フィルタ）: 商品番号前方一致 / 公開状態
+  - 更新日範囲が31日超の場合は警告を表示して検索を無効化
+  - 日付変換: `yyyy-mm-dd` → `yyyy-mm-ddT00:00:00`（From）/ `yyyy-mm-ddT23:59:59`（To）
 
 - **取得結果の選択反映:**
   - プレビュー一覧に商品ごとのチェックボックスを追加（品番指定・条件検索で共通）
@@ -585,13 +587,13 @@ npm run fs:products:check -- --products 1266302,1266303
   - 「選択したN件を商品一覧へ反映」ボタン
 
 - **ページング対応（表示のみ）:**
-  - `totalCount > 取得件数` のとき「さらに結果があります。条件を絞ってください」を表示
+  - `data.nextUrl` がある場合「さらに結果があります。条件を絞ってください」を表示
   - 自動ページングは未実装（次フェーズで検討）
 
 - **在庫同期:** 選択した商品のみ `/api/check-stock` を自動実行（既存と同じ挙動）
 
 - **Vercel API拡張 (`api/check-products.ts`):**
-  - `productNos` なしで条件パラメータ（`productNoPrefix` / `dateLastUpdatedFrom` / `dateLastUpdatedTo` / `visible`）を受け付けられるよう拡張済み
+  - `productNos` なしで FutureShop 正式パラメータ（`updateDateStart` / `updateDateEnd` / `mainGroupUrl` / `janCode` / `count` / `cursor`）を受け付けられるよう拡張済み
   - VPS側が対応済みになると条件検索が即時利用可能
 
 **VPS側変更が必要（別途対応）:**
@@ -599,15 +601,43 @@ npm run fs:products:check -- --products 1266302,1266303
 VPS `/check-products` が現在 `productNos` 必須のため、条件検索は VPS 対応後に利用可能になります。
 
 必要な VPS 変更:
-- `productNos` が未指定の場合、条件パラメータ（`productNoPrefix` / `dateLastUpdatedFrom` / `dateLastUpdatedTo` / `visible`）を受け付ける
-- FutureShop 商品検索API（`/admin-api/v1/goods` 等）を条件付きで呼び出す
-- レスポンスは既存フォーマット `{ ok, products, productCount, totalCount }` を維持
 
-確認が必要な FutureShop API パラメータ名（要マニュアル確認）:
-- 品番前方一致: `goodsNo` または `productNo` （前方一致の可否を確認）
-- 更新日範囲: `updateDateTimeFrom` / `updateDateTimeTo`
-- 公開状態: `displayStatus` (0=all, 1=表示, 2=非表示)
-- ページング: `page` / `limit` または `offset` / `count`
+```javascript
+// productNos が未指定の場合は条件検索モード
+const isSearchMode = !body.productNos && (
+  body.updateDateStart || body.updateDateEnd || body.mainGroupUrl || body.janCode
+);
+
+if (isSearchMode) {
+  // FutureShop 商品検索APIを呼び出す
+  const params = new URLSearchParams();
+  if (body.updateDateStart) params.set('updateDateStart', body.updateDateStart);
+  if (body.updateDateEnd)   params.set('updateDateEnd',   body.updateDateEnd);
+  if (body.mainGroupUrl)    params.set('mainGroupUrl',    body.mainGroupUrl);
+  if (body.janCode)         params.set('janCode',         body.janCode);
+  params.set('count', String(body.count ?? 50));
+  if (body.cursor) params.set('cursor', body.cursor);
+
+  const fsRes = await fetch(`${FS_API_BASE}/products/search?${params}`, { headers: fsAuthHeaders });
+  const fsData = await fsRes.json();
+
+  // 既存フォーマットに変換して返す
+  return res.json({
+    ok: true,
+    products: fsData.productList.map(convertProduct),
+    productCount: fsData.productList.length,
+    totalCount: fsData.totalCount,
+    nextUrl: fsData.nextUrl ?? null,
+  });
+}
+```
+
+FutureShop API正式パラメータ（確認済み）:
+- 更新日範囲: `updateDateStart` / `updateDateEnd`（`yyyy-mm-ddT00:00:00` 形式）
+- メイングループ: `mainGroupUrl`
+- JANコード: `janCode`
+- ページング: `count`（件数）/ `cursor`（次ページカーソル）
+- レスポンスに `nextUrl` が含まれる場合は次ページあり
 
 **今後の予定:**
 
