@@ -103,23 +103,42 @@ export default defineConfig({
           req.on('end', () => {
             void (async () => {
               try {
-                const parsed = JSON.parse(body) as { productNos?: unknown; types?: unknown };
-                const productNos = parsed.productNos;
+                const parsed = JSON.parse(body) as {
+                  productNos?: unknown;
+                  productNoPrefix?: unknown;
+                  dateLastUpdatedFrom?: unknown;
+                  dateLastUpdatedTo?: unknown;
+                  visible?: unknown;
+                  types?: unknown;
+                };
+                const { productNos, productNoPrefix, dateLastUpdatedFrom, dateLastUpdatedTo, visible } = parsed;
                 const types = Array.isArray(parsed.types) && parsed.types.length > 0
                   ? parsed.types
                   : ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
 
-                if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 50) {
-                  res.writeHead(400, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: 'Invalid productNos' }));
-                  return;
+                const isSearchMode = !productNos && (
+                  productNoPrefix !== undefined ||
+                  dateLastUpdatedFrom !== undefined ||
+                  dateLastUpdatedTo !== undefined ||
+                  visible !== undefined
+                );
+
+                if (!isSearchMode) {
+                  if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 50) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Invalid productNos' }));
+                    return;
+                  }
+                  if (!productNos.every((n) => /^\d{7}$/.test(String(n)))) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'productNos must be 7-digit numbers' }));
+                    return;
+                  }
                 }
 
-                if (!productNos.every((n) => /^\d{7}$/.test(String(n)))) {
-                  res.writeHead(400, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: 'productNos must be 7-digit numbers' }));
-                  return;
-                }
+                const requestBody = isSearchMode
+                  ? { productNoPrefix, dateLastUpdatedFrom, dateLastUpdatedTo, visible, types }
+                  : { productNos, types };
 
                 const upstream = await fetch(`${proxyBase}/check-products`, {
                   method:  'POST',
@@ -127,7 +146,7 @@ export default defineConfig({
                     'Authorization': `Bearer ${proxyToken}`,
                     'Content-Type':  'application/json',
                   },
-                  body: JSON.stringify({ productNos, types }),
+                  body: JSON.stringify(requestBody),
                 });
 
                 const data = await upstream.json() as Record<string, unknown>;

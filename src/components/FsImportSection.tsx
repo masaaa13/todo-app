@@ -2,6 +2,10 @@ import { useState, useCallback } from 'react';
 import type { MdProduct, MdVariation } from '../types/md';
 import styles from './FsImportSection.module.css';
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_TYPES = ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
+
 // ── VPS response types ────────────────────────────────────────────────────────
 
 type VpsVariation = {
@@ -37,7 +41,18 @@ type VpsResponse = {
   warning?: string;
 };
 
-// ── Input parsing ─────────────────────────────────────────────────────────────
+// ── Mode / search form types ──────────────────────────────────────────────────
+
+type Mode = 'manual' | 'search';
+
+type SearchForm = {
+  productNoPrefix: string;
+  dateFrom: string;
+  dateTo: string;
+  visible: 'all' | 'public' | 'private';
+};
+
+// ── Input parsing (manual mode) ───────────────────────────────────────────────
 
 type ParsedInput = {
   valid: string[];
@@ -200,16 +215,58 @@ type FsImportSectionProps = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
+  const [mode, setMode] = useState<Mode>('manual');
+
+  // Manual mode
   const [inputText, setInputText] = useState('');
+
+  // Condition search mode
+  const [searchForm, setSearchForm] = useState<SearchForm>({
+    productNoPrefix: '',
+    dateFrom: '',
+    dateTo: '',
+    visible: 'all',
+  });
+
+  // Shared fetch state
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
   const [fetchedProducts, setFetchedProducts] = useState<VpsProduct[]>([]);
   const [failedNos, setFailedNos] = useState<string[]>([]);
+  const [selectedNos, setSelectedNos] = useState<Set<string>>(new Set());
+  const [hasMore, setHasMore] = useState(false);
+
+  // Send state
   const [sendStatus, setSendStatus] = useState<'idle' | 'syncing' | 'sync-error'>('idle');
   const [syncError, setSyncError] = useState('');
 
-  const parsedInput = parseInput(inputText);
-  const hasValid    = parsedInput.valid.length > 0;
+  // Derived
+  const parsedInput       = parseInput(inputText);
+  const hasValid          = parsedInput.valid.length > 0;
+  const hasSearchCondition = !!(
+    searchForm.productNoPrefix.trim() ||
+    searchForm.dateFrom ||
+    searchForm.dateTo ||
+    searchForm.visible !== 'all'
+  );
+
+  const clearFetchState = () => {
+    setFetchedProducts([]);
+    setFailedNos([]);
+    setSelectedNos(new Set());
+    setHasMore(false);
+    setSendStatus('idle');
+    setSyncError('');
+    setFetchError('');
+    setFetchStatus('idle');
+  };
+
+  const switchMode = (newMode: Mode) => {
+    setMode(newMode);
+    clearFetchState();
+  };
+
+  // ── Manual mode fetch ───────────────────────────────────────────────────────
 
   const handleFetch = useCallback(async () => {
     const parsed = parseInput(inputText);
@@ -220,6 +277,8 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setFetchError('');
     setFetchedProducts([]);
     setFailedNos([]);
+    setSelectedNos(new Set());
+    setHasMore(false);
     setSendStatus('idle');
     setSyncError('');
 
@@ -227,22 +286,19 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const res = await fetch('/api/check-products', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productNos: nos,
-          types: ['variation', 'image', 'comment', 'preorder', 'plannedStock'],
-        }),
+        body: JSON.stringify({ productNos: nos, types: DEFAULT_TYPES }),
       });
-
       if (!res.ok) {
         const errData = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(errData.error ?? `HTTP ${res.status}`);
       }
-
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
 
-      const returnedNos = new Set((data.products ?? []).map((p) => p.productNo));
-      setFetchedProducts(data.products ?? []);
+      const products = data.products ?? [];
+      const returnedNos = new Set(products.map((p) => p.productNo));
+      setFetchedProducts(products);
+      setSelectedNos(new Set(products.map((p) => p.productNo)));
       setFailedNos(nos.filter((no) => !returnedNos.has(no)));
       setFetchStatus('idle');
     } catch (err) {
@@ -251,22 +307,87 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     }
   }, [inputText]);
 
+  // ── Condition search fetch ──────────────────────────────────────────────────
+
+  const handleSearchFetch = useCallback(async () => {
+    if (!hasSearchCondition) return;
+
+    setFetchStatus('loading');
+    setFetchError('');
+    setFetchedProducts([]);
+    setFailedNos([]);
+    setSelectedNos(new Set());
+    setHasMore(false);
+    setSendStatus('idle');
+    setSyncError('');
+
+    const visibleParam =
+      searchForm.visible === 'public'  ? true  :
+      searchForm.visible === 'private' ? false :
+      undefined;
+
+    const body: Record<string, unknown> = { types: DEFAULT_TYPES };
+    if (searchForm.productNoPrefix.trim()) body.productNoPrefix = searchForm.productNoPrefix.trim();
+    if (searchForm.dateFrom)              body.dateLastUpdatedFrom = searchForm.dateFrom;
+    if (searchForm.dateTo)                body.dateLastUpdatedTo   = searchForm.dateTo;
+    if (visibleParam !== undefined)       body.visible = visibleParam;
+
+    try {
+      const res = await fetch('/api/check-products', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json() as VpsResponse;
+      if (!data.ok) throw new Error('VPS returned ok=false');
+
+      const products = data.products ?? [];
+      setFetchedProducts(products);
+      setSelectedNos(new Set(products.map((p) => p.productNo)));
+      if (data.totalCount > products.length) setHasMore(true);
+      setFetchStatus('idle');
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Unknown error');
+      setFetchStatus('error');
+    }
+  }, [searchForm, hasSearchCondition]);
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+
+  const toggleProduct = useCallback((no: string) => {
+    setSelectedNos((prev) => {
+      const next = new Set(prev);
+      if (next.has(no)) next.delete(no);
+      else next.add(no);
+      return next;
+    });
+  }, []);
+
+  const selectAll    = useCallback(() => setSelectedNos(new Set(fetchedProducts.map((p) => p.productNo))), [fetchedProducts]);
+  const deselectAll  = useCallback(() => setSelectedNos(new Set()), []);
+
+  // ── Send + auto stock sync ──────────────────────────────────────────────────
+
   const handleSend = useCallback(async () => {
-    if (fetchedProducts.length === 0 || !onSendToProducts) return;
+    const toSend = fetchedProducts.filter((p) => selectedNos.has(p.productNo));
+    if (toSend.length === 0 || !onSendToProducts) return;
+
     setSendStatus('syncing');
     setSyncError('');
 
     const { products: existing, variations: existingVars } = loadExisting();
-    const newProducts   = fetchedProducts.map(toMdProduct);
-    const newVariations = fetchedProducts.flatMap((p) =>
-      (p.variations ?? []).map((v) => toMdVariation(v, p)),
-    );
+    const newProducts   = toSend.map(toMdProduct);
+    const newVariations = toSend.flatMap((p) => (p.variations ?? []).map((v) => toMdVariation(v, p)));
 
     let mergedProducts   = mergeProducts(existing, newProducts);
     let mergedVariations = mergeVariations(existingVars, newVariations);
 
-    // Auto stock sync for the imported products
-    const productNos = fetchedProducts.map((p) => p.productNo);
+    // Auto stock sync for selected products only
+    const productNos = toSend.map((p) => p.productNo);
     let syncFailed = false;
     try {
       const res = await fetch('/api/check-stock', {
@@ -308,28 +429,26 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     if (syncFailed) {
       setSyncError('在庫同期に失敗しましたが、商品取込は完了しました');
       setSendStatus('sync-error');
-      // Show the error briefly before navigating
       await new Promise<void>((r) => setTimeout(r, 2500));
     }
 
     onSendToProducts(mergedProducts, mergedVariations);
-  }, [fetchedProducts, onSendToProducts]);
+  }, [fetchedProducts, selectedNos, onSendToProducts]);
 
   const handleInputChange = (text: string) => {
     setInputText(text);
-    setFetchedProducts([]);
-    setFailedNos([]);
-    setSendStatus('idle');
-    setSyncError('');
-    setFetchError('');
-    setFetchStatus('idle');
+    clearFetchState();
   };
+
+  // ── Computed for summary ────────────────────────────────────────────────────
 
   const totalSkus    = fetchedProducts.reduce((n, p) => n + (p.variations?.length ?? 0), 0);
   const withImage    = fetchedProducts.filter((p) => !!p.imageUrl).length;
   const withPreorder = fetchedProducts.filter((p) => p.hasPreorder).length;
   const withPlanned  = fetchedProducts.filter((p) => p.hasPlannedStock).length;
   const hasSummary   = fetchedProducts.length > 0 || failedNos.length > 0;
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.section}>
@@ -338,52 +457,145 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         FutureShop商品取込
       </div>
       <p className={styles.desc}>
-        品番を入力してFutureShopから商品情報を取得し、商品一覧へ反映します。既存データがある場合は更新（上書きマージ）します。
+        FutureShopから商品情報を取得し、商品一覧へ反映します。既存データがある場合は更新（上書きマージ）します。
       </p>
 
-      <div className={styles.inputArea}>
-        <label className={styles.label}>品番（7桁・カンマまたは改行区切り）</label>
-        <textarea
-          className={styles.textarea}
-          value={inputText}
-          onChange={(e) => handleInputChange(e.target.value)}
-          placeholder={'1266302\n1266303,1266304'}
-          rows={3}
-        />
-        <div className={styles.parsedMeta}>
-          {parsedInput.valid.length > 0 ? (
-            <span className={styles.parsedValid}>
-              取得対象: {parsedInput.valid.length}件
-              <span className={styles.parsedNosList}> — {parsedInput.valid.join(', ')}</span>
-            </span>
-          ) : (
-            <span className={styles.parsedHint}>7桁の品番を入力してください</span>
-          )}
-          {parsedInput.duplicates > 0 && (
-            <span className={styles.parsedDup}>　重複除外: {parsedInput.duplicates}件</span>
-          )}
-          {parsedInput.invalid.length > 0 && (
-            <span className={styles.parsedInvalid}>
-              　無効: {parsedInput.invalid.join(', ')}
-            </span>
-          )}
-        </div>
+      {/* ── Mode tabs ── */}
+      <div className={styles.modeTabs}>
+        <button
+          type="button"
+          className={`${styles.modeTab} ${mode === 'manual' ? styles.modeTabActive : ''}`}
+          onClick={() => switchMode('manual')}
+        >
+          品番指定
+        </button>
+        <button
+          type="button"
+          className={`${styles.modeTab} ${mode === 'search' ? styles.modeTabActive : ''}`}
+          onClick={() => switchMode('search')}
+        >
+          条件検索
+        </button>
       </div>
 
+      {/* ── Manual mode ── */}
+      {mode === 'manual' && (
+        <div className={styles.inputArea}>
+          <label className={styles.label}>品番（7桁・カンマまたは改行区切り）</label>
+          <textarea
+            className={styles.textarea}
+            value={inputText}
+            onChange={(e) => handleInputChange(e.target.value)}
+            placeholder={'1266302\n1266303,1266304'}
+            rows={3}
+          />
+          <div className={styles.parsedMeta}>
+            {parsedInput.valid.length > 0 ? (
+              <span className={styles.parsedValid}>
+                取得対象: {parsedInput.valid.length}件
+                <span className={styles.parsedNosList}> — {parsedInput.valid.join(', ')}</span>
+              </span>
+            ) : (
+              <span className={styles.parsedHint}>7桁の品番を入力してください</span>
+            )}
+            {parsedInput.duplicates > 0 && (
+              <span className={styles.parsedDup}>　重複除外: {parsedInput.duplicates}件</span>
+            )}
+            {parsedInput.invalid.length > 0 && (
+              <span className={styles.parsedInvalid}>
+                　無効: {parsedInput.invalid.join(', ')}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Condition search mode ── */}
+      {mode === 'search' && (
+        <div className={styles.searchForm}>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>商品番号（前方一致）</span>
+            <input
+              type="text"
+              className={styles.searchInput}
+              value={searchForm.productNoPrefix}
+              onChange={(e) => setSearchForm((f) => ({ ...f, productNoPrefix: e.target.value }))}
+              placeholder="例: 1266"
+              maxLength={7}
+            />
+          </div>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>更新日 From</span>
+            <input
+              type="date"
+              className={styles.searchInput}
+              value={searchForm.dateFrom}
+              onChange={(e) => setSearchForm((f) => ({ ...f, dateFrom: e.target.value }))}
+            />
+          </div>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>更新日 To</span>
+            <input
+              type="date"
+              className={styles.searchInput}
+              value={searchForm.dateTo}
+              onChange={(e) => setSearchForm((f) => ({ ...f, dateTo: e.target.value }))}
+            />
+          </div>
+          <div className={styles.searchRow}>
+            <span className={styles.searchLabel}>公開状態</span>
+            <div className={styles.radioGroup}>
+              {(['all', 'public', 'private'] as const).map((v) => (
+                <label key={v} className={styles.radioLabel}>
+                  <input
+                    type="radio"
+                    name="fs-visible"
+                    value={v}
+                    checked={searchForm.visible === v}
+                    onChange={() => setSearchForm((f) => ({ ...f, visible: v }))}
+                  />
+                  {v === 'all' ? 'すべて' : v === 'public' ? '公開中' : '非公開'}
+                </label>
+              ))}
+            </div>
+          </div>
+          {!hasSearchCondition && (
+            <div className={styles.parsedHint}>条件を1つ以上入力してください</div>
+          )}
+          <div className={styles.searchNote}>
+            ※ 条件検索は VPS 側の対応が完了次第、利用可能になります
+          </div>
+        </div>
+      )}
+
+      {/* ── Fetch button ── */}
       <div className={styles.btnRow}>
-        <button
-          className={styles.fetchBtn}
-          onClick={handleFetch}
-          disabled={!hasValid || fetchStatus === 'loading'}
-        >
-          {fetchStatus === 'loading' ? '取得中...' : 'FutureShopから取得'}
-        </button>
+        {mode === 'manual' ? (
+          <button
+            type="button"
+            className={styles.fetchBtn}
+            onClick={handleFetch}
+            disabled={!hasValid || fetchStatus === 'loading'}
+          >
+            {fetchStatus === 'loading' ? '取得中...' : 'FutureShopから取得'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={styles.fetchBtn}
+            onClick={handleSearchFetch}
+            disabled={!hasSearchCondition || fetchStatus === 'loading'}
+          >
+            {fetchStatus === 'loading' ? '検索中...' : '条件で検索'}
+          </button>
+        )}
       </div>
 
       {fetchStatus === 'error' && (
         <div className={styles.errorMsg}>{fetchError}</div>
       )}
 
+      {/* ── Fetch summary ── */}
       {hasSummary && (
         <div className={styles.fetchSummary}>
           {fetchedProducts.length > 0 && (
@@ -417,33 +629,55 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               </span>
             </>
           )}
+          {hasMore && (
+            <div className={styles.hasMoreWarning}>
+              さらに結果がある可能性があります。条件を絞ってください。
+            </div>
+          )}
         </div>
       )}
 
+      {/* ── Product list with selection ── */}
       {fetchedProducts.length > 0 && (
         <>
-          <div className={styles.previewLabel}>取得結果</div>
+          <div className={styles.selectionBar}>
+            <button type="button" className={styles.selectionBtn} onClick={selectAll}>全選択</button>
+            <button type="button" className={styles.selectionBtn} onClick={deselectAll}>全解除</button>
+            <span className={styles.selectionCount}>
+              選択: {selectedNos.size}件 / {fetchedProducts.length}件
+            </span>
+          </div>
+
           <div className={styles.previewList}>
             {fetchedProducts.map((p) => (
-              <ProductPreviewCard key={p.productNo} product={p} />
+              <ProductPreviewCard
+                key={p.productNo}
+                product={p}
+                selected={selectedNos.has(p.productNo)}
+                onToggle={() => toggleProduct(p.productNo)}
+              />
             ))}
           </div>
 
           <div className={styles.sendRow}>
             <button
+              type="button"
               className={styles.sendBtn}
               onClick={handleSend}
-              disabled={!onSendToProducts || sendStatus === 'syncing' || sendStatus === 'sync-error'}
+              disabled={
+                !onSendToProducts ||
+                selectedNos.size === 0 ||
+                sendStatus === 'syncing' ||
+                sendStatus === 'sync-error'
+              }
             >
-              {sendStatus === 'syncing' ? '在庫同期中...' : '商品一覧へ反映'}
+              {sendStatus === 'syncing'
+                ? '在庫同期中...'
+                : `選択した${selectedNos.size}件を商品一覧へ反映`}
             </button>
-            <span className={styles.sendDesc}>
-              {sendStatus === 'idle'
-                ? `${fetchedProducts.length}品番を既存データと統合して商品一覧タブへ移動します。`
-                : sendStatus === 'syncing'
-                ? 'FutureShopから在庫を取得しています...'
-                : ''}
-            </span>
+            {sendStatus === 'syncing' && (
+              <span className={styles.sendDesc}>FutureShopから在庫を取得しています...</span>
+            )}
             {syncError && (
               <span className={styles.syncErrorMsg}>{syncError}</span>
             )}
@@ -456,9 +690,25 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
 
 // ── Product preview card ──────────────────────────────────────────────────────
 
-function ProductPreviewCard({ product: p }: { product: VpsProduct }) {
+function ProductPreviewCard({
+  product: p,
+  selected,
+  onToggle,
+}: {
+  product: VpsProduct;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <div className={styles.previewCard}>
+    <div className={`${styles.previewCard} ${selected ? styles.previewCardSelected : ''}`}>
+      <label className={styles.previewCheck}>
+        <input
+          type="checkbox"
+          className={styles.previewCheckInput}
+          checked={selected}
+          onChange={onToggle}
+        />
+      </label>
       <div className={styles.previewThumbWrap}>
         {p.imageUrl ? (
           <img src={p.imageUrl} alt={p.name} className={styles.previewThumb} />
