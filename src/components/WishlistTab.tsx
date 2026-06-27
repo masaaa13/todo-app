@@ -365,6 +365,18 @@ function fmtEffect(v: WishlistItem['wishlistEffect']): string {
   return v ?? '未判定';
 }
 
+function fmtStockType(v: WishlistItem['stockType']): string {
+  if (v == null) return '準備中';
+  const map: Record<NonNullable<typeof v>, string> = {
+    actual:   '実在庫',
+    preorder: '予約在庫',
+    planned:  '予定在庫',
+    mixed:    '複合',
+    unknown:  '未判定',
+  };
+  return map[v];
+}
+
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
@@ -379,6 +391,12 @@ const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
   { key: 'reason',               label: '理由',           defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
   { key: 'suggestedAction',      label: '推奨アクション', defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
   { key: 'image',                label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (i) => <ProductThumbnail imageUrl={i.imageUrl} alt={i.productName} /> },
+  // 在庫（EC同期）
+  { key: 'stockType',      label: '在庫区分',    defaultVisible: true,  defaultWidth: 100, render: (i) => <span className={styles.stockTypeCell} data-type={i.stockType ?? 'none'}>{fmtStockType(i.stockType)}</span> },
+  { key: 'actualStock',    label: '実在庫',      defaultVisible: true,  defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.actualStock)}</span> },
+  { key: 'preorderStock',  label: '予約在庫',    defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.preorderStock)}</span> },
+  { key: 'plannedStock',   label: '予定在庫',    defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.plannedStock)}</span> },
+  { key: 'availableStock', label: '販売可能在庫', defaultVisible: true,  defaultWidth: 110, render: (i) => <span className={styles.numCell}>{fmtNum(i.availableStock)}</span> },
   // 効果測定
   { key: 'wishlistAddedAt',      label: '欲しいもの追加日',  defaultVisible: false, defaultWidth: 130, render: (i) => <span className={styles.dateCell}>{i.wishlistAddedAt ?? '準備中'}</span> },
   { key: 'wishlistRequestedQty', label: '追加希望数',       defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistRequestedQty)}</span> },

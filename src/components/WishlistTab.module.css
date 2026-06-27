@@ -543,6 +543,26 @@
 .effectCell[data-effect='none'],
 .effectCell[data-effect='未判定'] { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
 
+/* Stock type cell */
+.stockTypeCell {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
+.stockTypeCell[data-type='actual']   { background: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
+.stockTypeCell[data-type='preorder'] { background: #eff6ff; color: #1e40af; border-color: #93c5fd; }
+.stockTypeCell[data-type='planned']  { background: #f5f3ff; color: #5b21b6; border-color: #c4b5fd; }
+.stockTypeCell[data-type='mixed']    { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
+.stockTypeCell[data-type='unknown'],
+.stockTypeCell[data-type='none']     { background: #f3f4f6; color: #6b7280; border-color: #d1d5db; }
+
 /* SKU badge */
 .skuBadge {
   display: inline-block;
