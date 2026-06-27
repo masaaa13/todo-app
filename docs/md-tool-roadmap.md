@@ -249,6 +249,37 @@ radial 参考: 消化週数 < 販売可能週数 − n → 売れ筋、消化週
 
 ---
 
+## Phase 4.5: FutureShop 在庫検索API 検証（完了）
+
+**目的:** 在庫検索APIのレスポンス構造を確認し、MDツールへの反映可否を判断する
+
+**実装済み:**
+
+- `scripts/futureshop/check-stock-api.mjs` — 在庫検索API検証スクリプト
+- `package.json` に `fs:stock:check` スクリプトを追加
+- `.env.local` の必要環境変数: `FUTURESHOP_API_BASE_URL` / `FUTURESHOP_API_KEY` / `FUTURESHOP_SHOP_ID`
+- APIキー・認証情報はコンソールに表示しない設計（マスク処理済み）
+- 1秒待機によるレート制限対策（FutureShop API 1秒1リクエスト制限）
+- マスク済みレスポンスを `tmp/futureshop-stock-response.sample.json` に保存
+- 検出フィールドサマリーを `tmp/futureshop-stock-response.summary.json` に保存
+- `tmp/` は `.gitignore` で管理対象外
+
+**確認したい項目:**
+
+- SKU単位在庫が取得できるか（商品管理番号 / カラー枝番号 / サイズ枝番号）
+- 実在庫 / 予約在庫 / 予定在庫がAPI上で区別できるか
+- 販売可能在庫フィールドの有無
+- 在庫ステータスの有無
+
+**使い方:**
+```bash
+npm run fs:stock:check -- --product 1266302
+```
+
+**次フェーズ予定:** 検証結果をもとにMDツールへの在庫同期ボタンを追加する
+
+---
+
 ## Phase 5: 欲しいものリスト高度化
 
 - 店舗側へ共有する補充リスト自動生成（バリエーション別を基本単位とする）
