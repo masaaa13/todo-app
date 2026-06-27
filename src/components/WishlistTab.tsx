@@ -91,6 +91,7 @@ function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
       reason,
       priority,
       suggestedAction,
+      imageUrl: v.imageUrl,
     };
   });
 }
@@ -199,6 +200,28 @@ function PriorityPill({ priority }: { priority: WishlistItem['priority'] }) {
     <span className={styles.priorityPill} data-variant={variant}>
       {priority}
     </span>
+  );
+}
+
+// ── Thumbnail ─────────────────────────────────────────────────────────────────
+
+function ProductThumbnail({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+  if (!imageUrl) {
+    return <div className={styles.thumbnailPlaceholder}>画像なし</div>;
+  }
+  return (
+    <img
+      src={imageUrl}
+      alt={alt}
+      className={styles.thumbnail}
+      onError={(e) => {
+        e.currentTarget.style.display = 'none';
+        const placeholder = document.createElement('div');
+        placeholder.className = styles.thumbnailPlaceholder;
+        placeholder.textContent = '画像なし';
+        e.currentTarget.parentNode?.appendChild(placeholder);
+      }}
+    />
   );
 }
 
@@ -332,7 +355,8 @@ const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
   { key: 'category',        label: 'カテゴリ',     defaultVisible: true, defaultWidth: 110, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
   { key: 'releaseDate',     label: '発売日',       defaultVisible: true, defaultWidth: 100, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
   { key: 'reason',          label: '理由',         defaultVisible: true, defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
-  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true, defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
+  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
+  { key: 'image',           label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (i) => <ProductThumbnail imageUrl={i.imageUrl} alt={i.productName} /> },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────

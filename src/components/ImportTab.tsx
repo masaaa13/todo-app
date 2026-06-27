@@ -2425,6 +2425,7 @@ function reviewRowsToMdProducts(
       sellThroughRate: null,
       status,
       nextAction,
+      imageUrl: undefined,
     });
   }
 
@@ -2473,6 +2474,7 @@ function reviewRowsToMdVariations(
     variations.push({
       productNo, productName, skuCode, color, size, category, releaseDate,
       status, nextAction, ecStock: null, recentSales: null, sellThroughRate: null,
+      imageUrl: undefined,
     });
   }
 

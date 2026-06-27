@@ -9,6 +9,7 @@ export type MdProduct = {
   sellThroughRate?: number | null;
   status: string;
   nextAction: string;
+  imageUrl?: string;
 };
 
 export type MdVariation = {
@@ -24,6 +25,7 @@ export type MdVariation = {
   ecStock?: number | null;
   recentSales?: number | null;
   sellThroughRate?: number | null;
+  imageUrl?: string;
 };
 
 export type WishlistItem = {
@@ -39,4 +41,5 @@ export type WishlistItem = {
   reason: string;
   priority: '高' | '中' | '低';
   suggestedAction: string;
+  imageUrl?: string;
 };

@@ -152,6 +152,40 @@ radial 参考: 消化週数 < 販売可能週数 − n → 売れ筋、消化週
 
 ---
 
+## Phase 3.7: 画像列の土台追加（完了）
+
+**目的:** 商品一覧 / 欲しいものリストで商品画像サムネイルを表示できる土台を作る
+
+**実装済み:**
+
+- `MdProduct` / `MdVariation` / `WishlistItem` に `imageUrl?: string` を追加
+- 商品一覧 商品別: 「画像」列を追加（`defaultVisible: false`、`defaultWidth: 90`）
+- 商品一覧 バリエーション別: 「画像」列を追加（`defaultVisible: false`、`defaultWidth: 90`）
+- 欲しいものリスト: 「画像」列を追加（`defaultVisible: false`、`defaultWidth: 90`）
+- `imageUrl` がある場合はサムネイル表示（48px × 60px、`object-fit: cover`、角丸、枠線）
+- `imageUrl` がない場合は「画像なし」プレースホルダー表示
+- 画像読み込みエラー時もプレースホルダーに切り替え
+- 表示項目設定で画像列のON/OFF、列順変更、列幅変更が可能
+- `localStorage` に保存、旧設定には末尾に追加
+- `ImportTab` から生成する `MdProduct` / `MdVariation` に `imageUrl: undefined` を設定
+- CSV出力には画像URL列を追加しない（既存仕様維持）
+
+**今回は実装しないこと:**
+
+- 商品画像ファイルアップロード
+- 画像URL CSVの専用取込
+- FutureShop APIからの画像取得
+- SKU別画像の本格対応
+
+**次フェーズ予定:**
+
+- 商品画像URL CSV取込（品番→URL マッピング）
+- FutureShop API連携での画像URL取得
+- SKU別画像対応（バリエーション別）
+- 画像URLのインポート画面への組み込み
+
+---
+
 ## Phase 4: 欲しいものリスト
 
 - 店舗側へ共有する補充リスト自動生成（バリエーション別を基本単位とする）

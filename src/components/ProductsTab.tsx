@@ -478,6 +478,28 @@ function ActionPill({ action }: { action: string }) {
   return <span className={styles.actionPill} data-variant={variant}>{action}</span>;
 }
 
+// ── Thumbnail ─────────────────────────────────────────────────────────────────
+
+function ProductThumbnail({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+  if (!imageUrl) {
+    return <div className={styles.thumbnailPlaceholder}>画像なし</div>;
+  }
+  return (
+    <img
+      src={imageUrl}
+      alt={alt}
+      className={styles.thumbnail}
+      onError={(e) => {
+        e.currentTarget.style.display = 'none';
+        const placeholder = document.createElement('div');
+        placeholder.className = styles.thumbnailPlaceholder;
+        placeholder.textContent = '画像なし';
+        e.currentTarget.parentNode?.appendChild(placeholder);
+      }}
+    />
+  );
+}
+
 // ── Column selector ───────────────────────────────────────────────────────────
 
 type ColumnSelectorProps = {
@@ -609,7 +631,7 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   { key: 'sellThroughRate', label: '消化率',       defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'status',          label: 'ステータス',   defaultVisible: true,  defaultWidth: 120, render: (p) => <StatusPill status={p.status} /> },
   { key: 'nextAction',      label: '次アクション', defaultVisible: true,  defaultWidth: 180, render: (p) => <ActionPill action={p.nextAction} /> },
-  { key: 'image',           label: '画像',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'image',           label: '画像',         defaultVisible: false, defaultWidth: 90,  render: (p) => <ProductThumbnail imageUrl={p.imageUrl} alt={p.productName} /> },
 ];
 
 const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
@@ -625,6 +647,7 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'sellThroughRate', label: '消化率',       defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'status',          label: 'ステータス',   defaultVisible: true,  defaultWidth: 120, render: (v) => <StatusPill status={v.status} /> },
   { key: 'nextAction',      label: '次アクション', defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction} /> },
+  { key: 'image',           label: '画像',         defaultVisible: false, defaultWidth: 90,  render: (v) => <ProductThumbnail imageUrl={v.imageUrl} alt={v.productName} /> },
 ];
 
 // ── Table panels ──────────────────────────────────────────────────────────────
