@@ -43,6 +43,9 @@ export type MdProduct = {
   visible?: boolean;
   hasPreorder?: boolean;
   hasPlannedStock?: boolean;
+
+  // 取込元
+  importSource?: 'csv' | 'futureshop' | 'manual';
 };
 
 export type MdVariation = {
@@ -118,6 +121,12 @@ export type WishlistItem = {
   priority: '高' | '中' | '低';
   suggestedAction: string;
   imageUrl?: string;
+
+  // FutureShop商品情報
+  visible?: boolean;
+  hasPreorder?: boolean;
+  hasPlannedStock?: boolean;
+  productUrl?: string;
 
   // 在庫
   actualStock?: number | null;

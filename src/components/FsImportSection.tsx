@@ -27,13 +27,19 @@ type VpsProduct = {
   uri: string;
   name: string;
   unitPrice: number | string;
-  visible: boolean;
+  visible: boolean | string | null;
   imageUrl: string;
   imageList: Record<string, string>[];
   variations: VpsVariation[];
   hasPreorder: boolean;
   hasPlannedStock: boolean;
 };
+
+function normalizeVisible(value: unknown): boolean | null {
+  if (value === true  || value === 'true')  return true;
+  if (value === false || value === 'false') return false;
+  return null;
+}
 
 type VpsResponse = {
   ok: boolean;
@@ -166,9 +172,10 @@ function toMdProduct(p: VpsProduct): MdProduct {
     price:           unitPriceNum(p),
     productUrl:      p.uri,
     productUrlCode:  p.url,
-    visible:         p.visible,
+    visible:         normalizeVisible(p.visible) ?? undefined,
     hasPreorder:     p.hasPreorder,
     hasPlannedStock: p.hasPlannedStock,
+    importSource:    'futureshop',
   };
 }
 
@@ -245,6 +252,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
   const [fetchedProducts, setFetchedProducts] = useState<VpsProduct[]>([]);
+  const [rawFetchCount, setRawFetchCount]     = useState(0);
   const [failedNos, setFailedNos] = useState<string[]>([]);
   const [selectedNos, setSelectedNos] = useState<Set<string>>(new Set());
   const [hasMore, setHasMore]         = useState(false);
@@ -253,8 +261,9 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const [noMorePages, setNoMorePages] = useState<'limit' | 'done' | null>(null);
 
   // Send state
-  const [sendStatus, setSendStatus] = useState<'idle' | 'syncing' | 'sync-error'>('idle');
-  const [syncError, setSyncError] = useState('');
+  const [sendStatus, setSendStatus] = useState<'idle' | 'syncing'>('idle');
+  const [sentNos, setSentNos] = useState<Set<string>>(new Set());
+  const [sendResult, setSendResult] = useState<{ count: number; stockOk: boolean } | null>(null);
 
   // Derived
   const parsedInput       = parseInput(inputText);
@@ -274,6 +283,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
 
   const clearFetchState = () => {
     setFetchedProducts([]);
+    setRawFetchCount(0);
     setFailedNos([]);
     setSelectedNos(new Set());
     setHasMore(false);
@@ -281,7 +291,8 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setPageCount(0);
     setNoMorePages(null);
     setSendStatus('idle');
-    setSyncError('');
+    setSentNos(new Set());
+    setSendResult(null);
     setFetchError('');
     setFetchStatus('idle');
   };
@@ -305,7 +316,6 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setSelectedNos(new Set());
     setHasMore(false);
     setSendStatus('idle');
-    setSyncError('');
 
     try {
       const res = await fetch('/api/check-products', {
@@ -340,6 +350,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setFetchStatus('loading');
     setFetchError('');
     setFetchedProducts([]);
+    setRawFetchCount(0);
     setFailedNos([]);
     setSelectedNos(new Set());
     setHasMore(false);
@@ -347,7 +358,8 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setPageCount(0);
     setNoMorePages(null);
     setSendStatus('idle');
-    setSyncError('');
+    setSentNos(new Set());
+    setSendResult(null);
 
     const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
     if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
@@ -367,6 +379,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
 
+      const rawCount = (data.products ?? []).length;
       let products = data.products ?? [];
 
       // Client-side filters (not sent to API)
@@ -374,11 +387,12 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       if (prefix) products = products.filter((p) => p.productNo.startsWith(prefix));
       if (searchForm.visible !== 'all') {
         const wantPublic = searchForm.visible === 'public';
-        products = products.filter((p) => p.visible === wantPublic);
+        products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
       }
 
       const cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
       const canFetchMore = !!cursor && products.length < MAX_PRODUCTS;
+      setRawFetchCount(rawCount);
       setFetchedProducts(products);
       setSelectedNos(new Set(products.map((p) => p.productNo)));
       setNextCursor(cursor);
@@ -425,6 +439,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
 
+      const rawCountMore = (data.products ?? []).length;
       let newProducts = data.products ?? [];
 
       // 初回と同じクライアントフィルタを適用
@@ -432,7 +447,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       if (prefix) newProducts = newProducts.filter((p) => p.productNo.startsWith(prefix));
       if (searchForm.visible !== 'all') {
         const wantPublic = searchForm.visible === 'public';
-        newProducts = newProducts.filter((p) => p.visible === wantPublic);
+        newProducts = newProducts.filter((p) => normalizeVisible(p.visible) === wantPublic);
       }
 
       // 既存との dedup マージ
@@ -444,6 +459,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const cursor         = data.nextUrl ? extractCursor(data.nextUrl) : null;
       const canFetchMore   = !!cursor && newPageCount < MAX_PAGES && combined.length < MAX_PRODUCTS;
 
+      setRawFetchCount((prev) => prev + rawCountMore);
       setFetchedProducts(combined);
       setSelectedNos((prev) => {
         const next = new Set(prev);
@@ -482,7 +498,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     if (toSend.length === 0 || !onSendToProducts) return;
 
     setSendStatus('syncing');
-    setSyncError('');
+    setSendResult(null);
 
     const { products: existing, variations: existingVars } = loadExisting();
     const newProducts   = toSend.map(toMdProduct);
@@ -531,12 +547,14 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       syncFailed = true;
     }
 
-    if (syncFailed) {
-      setSyncError('在庫同期に失敗しましたが、商品取込は完了しました');
-      setSendStatus('sync-error');
-      await new Promise<void>((r) => setTimeout(r, 2500));
-    }
-
+    const sentProductNos = toSend.map((p) => p.productNo);
+    setSentNos((prev) => {
+      const next = new Set(prev);
+      for (const no of sentProductNos) next.add(no);
+      return next;
+    });
+    setSendResult({ count: toSend.length, stockOk: !syncFailed });
+    setSendStatus('idle');
     onSendToProducts(mergedProducts, mergedVariations);
   }, [fetchedProducts, selectedNos, onSendToProducts]);
 
@@ -714,7 +732,15 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       {hasSummary && (
         <div className={styles.fetchSummary}>
           {fetchedProducts.length > 0 && (
-            <span className={styles.summarySuccess}>取得成功: {fetchedProducts.length}品番</span>
+            <>
+              <span className={styles.summarySuccess}>取得成功: {fetchedProducts.length}品番</span>
+              {mode === 'search' && rawFetchCount > 0 && rawFetchCount !== fetchedProducts.length && (
+                <>
+                  <span className={styles.summaryDot}>·</span>
+                  <span>取得: {rawFetchCount}件 → 絞り込み後: {fetchedProducts.length}件</span>
+                </>
+              )}
+            </>
           )}
           {fetchedProducts.length > 0 && (
             <>
@@ -764,6 +790,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
                 key={p.productNo}
                 product={p}
                 selected={selectedNos.has(p.productNo)}
+                sent={sentNos.has(p.productNo)}
                 onToggle={() => toggleProduct(p.productNo)}
               />
             ))}
@@ -805,8 +832,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               disabled={
                 !onSendToProducts ||
                 selectedNos.size === 0 ||
-                sendStatus === 'syncing' ||
-                sendStatus === 'sync-error'
+                sendStatus === 'syncing'
               }
             >
               {sendStatus === 'syncing'
@@ -816,8 +842,10 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
             {sendStatus === 'syncing' && (
               <span className={styles.sendDesc}>FutureShopから在庫を取得しています...</span>
             )}
-            {syncError && (
-              <span className={styles.syncErrorMsg}>{syncError}</span>
+            {sendResult && (
+              <span className={sendResult.stockOk ? styles.sentDone : styles.syncErrorMsg}>
+                {sendResult.count}件を反映しました{!sendResult.stockOk && '（在庫同期は失敗）'}
+              </span>
             )}
           </div>
         </>
@@ -831,10 +859,12 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
 function ProductPreviewCard({
   product: p,
   selected,
+  sent,
   onToggle,
 }: {
   product: VpsProduct;
   selected: boolean;
+  sent: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -855,7 +885,10 @@ function ProductPreviewCard({
         )}
       </div>
       <div className={styles.previewInfo}>
-        <div className={styles.previewProductNo}>{p.productNo}</div>
+        <div className={styles.previewProductNo}>
+          {p.productNo}
+          {sent && <span className={styles.sentBadge}>反映済み</span>}
+        </div>
         <div className={styles.previewName}>{p.name}</div>
         <div className={styles.previewMeta}>
           <span>{Number(p.unitPrice).toLocaleString()}円</span>

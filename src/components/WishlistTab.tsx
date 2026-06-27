@@ -26,11 +26,15 @@ type ColumnConfig = {
   width?: number;
 };
 
+type SortConfig = { key: string; dir: 'asc' | 'desc' } | null;
+
 type TableColumn<T> = {
   key: string;
   label: string;
   defaultVisible: boolean;
   defaultWidth?: number;
+  sortable?: boolean;
+  sortValue?: (row: T) => string | number | boolean | null | undefined;
   render: (row: T) => React.ReactNode;
 };
 
@@ -51,8 +55,10 @@ const DEFAULT_CONDITIONS: Conditions = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
+function toWishlistItems(variations: MdVariation[], products: import('../types/md').MdProduct[]): WishlistItem[] {
+  const productMap = new Map(products.map((p) => [p.productNo, p]));
   return variations.map((v) => {
+    const product = productMap.get(v.productNo);
     let priority: WishlistItem['priority'];
     let reason: string;
     let suggestedAction: string;
@@ -97,6 +103,11 @@ function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
       stockType: v.stockType,
       preorderStock: v.preorderStock,
       plannedStock: v.plannedStock,
+      // product-level fields joined from MdProduct
+      visible: product?.visible ?? undefined,
+      hasPreorder: product?.hasPreorder ?? undefined,
+      hasPlannedStock: product?.hasPlannedStock ?? undefined,
+      productUrl: v.productUrl ?? product?.productUrl ?? undefined,
       wishlistAddedAt: v.wishlistAddedAt,
       wishlistRequestedQty: v.wishlistRequestedQty,
       wishlistStockBefore: v.wishlistStockBefore,
@@ -365,6 +376,29 @@ function fmtEffect(v: WishlistItem['wishlistEffect']): string {
   return v ?? '未判定';
 }
 
+function fmtVisible(v: boolean | undefined | null): string {
+  if (v === true) return '公開中';
+  if (v === false) return '非公開';
+  return '—';
+}
+
+function compareValues(
+  a: string | number | boolean | null | undefined,
+  b: string | number | boolean | null | undefined,
+  dir: 'asc' | 'desc',
+): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  let cmp: number;
+  if (typeof a === 'string' && typeof b === 'string') {
+    cmp = a.localeCompare(b, 'ja');
+  } else {
+    cmp = a < b ? -1 : a > b ? 1 : 0;
+  }
+  return dir === 'asc' ? cmp : -cmp;
+}
+
 function fmtStockType(v: WishlistItem['stockType']): string {
   if (v == null) return '準備中';
   const map: Record<NonNullable<typeof v>, string> = {
@@ -380,23 +414,28 @@ function fmtStockType(v: WishlistItem['stockType']): string {
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
-  { key: 'priority',             label: '優先度',         defaultVisible: true,  defaultWidth: 70,  render: (i) => <PriorityPill priority={i.priority} /> },
-  { key: 'productNo',            label: '品番',           defaultVisible: true,  defaultWidth: 90,  render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
-  { key: 'productName',          label: '商品名',         defaultVisible: true,  defaultWidth: 200, render: (i) => <span className={styles.productName}>{i.productName}</span> },
-  { key: 'skuCode',              label: 'SKU',            defaultVisible: true,  defaultWidth: 120, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
-  { key: 'color',                label: 'カラー',         defaultVisible: true,  defaultWidth: 120, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
-  { key: 'size',                 label: 'サイズ',         defaultVisible: true,  defaultWidth: 70,  render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
-  { key: 'category',             label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 110, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
-  { key: 'releaseDate',          label: '発売日',         defaultVisible: true,  defaultWidth: 100, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
+  { key: 'priority',             label: '優先度',         defaultVisible: true,  defaultWidth: 70,  sortable: true, sortValue: (i) => i.priority, render: (i) => <PriorityPill priority={i.priority} /> },
+  { key: 'productNo',            label: '品番',           defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (i) => i.productNo, render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
+  { key: 'productName',          label: '商品名',         defaultVisible: true,  defaultWidth: 200, sortable: true, sortValue: (i) => i.productName, render: (i) => <span className={styles.productName}>{i.productName}</span> },
+  { key: 'skuCode',              label: 'SKU',            defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (i) => i.skuCode, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',                label: 'カラー',         defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (i) => i.color ?? null, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
+  { key: 'size',                 label: 'サイズ',         defaultVisible: true,  defaultWidth: 70,  sortable: true, sortValue: (i) => i.size ?? null, render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
+  { key: 'category',             label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (i) => i.category, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
+  { key: 'releaseDate',          label: '発売日',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (i) => i.releaseDate ?? null, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
   { key: 'reason',               label: '理由',           defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
   { key: 'suggestedAction',      label: '推奨アクション', defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
   { key: 'image',                label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (i) => <ProductThumbnail imageUrl={i.imageUrl} alt={i.productName} /> },
+  // 公開状態・商品情報
+  { key: 'visibleStatus',        label: '公開状態',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (i) => i.visible ?? null, render: (i) => <span className={styles.visiblePill} data-v={i.visible === true ? 'public' : i.visible === false ? 'private' : 'unknown'}>{fmtVisible(i.visible)}</span> },
+  { key: 'productUrl',           label: '商品URL',        defaultVisible: false, defaultWidth: 100, render: (i) => i.productUrl ? <a href={i.productUrl} target="_blank" rel="noopener noreferrer" className={styles.productUrlLink}>商品ページ</a> : <span className={styles.naCell}>—</span> },
+  { key: 'hasPreorder',          label: '予約販売',       defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (i) => i.hasPreorder ?? null, render: (i) => <span className={styles.naCell}>{i.hasPreorder == null ? '—' : i.hasPreorder ? 'あり' : 'なし'}</span> },
+  { key: 'hasPlannedStockFlag',  label: '予定在庫(FS)',   defaultVisible: false, defaultWidth: 100, sortable: true, sortValue: (i) => i.hasPlannedStock ?? null, render: (i) => <span className={styles.naCell}>{i.hasPlannedStock == null ? '—' : i.hasPlannedStock ? 'あり' : 'なし'}</span> },
   // 在庫（EC同期）
   { key: 'stockType',      label: '在庫区分',    defaultVisible: true,  defaultWidth: 100, render: (i) => <span className={styles.stockTypeCell} data-type={i.stockType ?? 'none'}>{fmtStockType(i.stockType)}</span> },
-  { key: 'actualStock',    label: '実在庫',      defaultVisible: true,  defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.actualStock)}</span> },
+  { key: 'actualStock',    label: '実在庫',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (i) => i.actualStock ?? null, render: (i) => <span className={styles.numCell}>{fmtNum(i.actualStock)}</span> },
   { key: 'preorderStock',  label: '予約在庫',    defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.preorderStock)}</span> },
   { key: 'plannedStock',   label: '予定在庫',    defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.plannedStock)}</span> },
-  { key: 'availableStock', label: '販売可能在庫', defaultVisible: true,  defaultWidth: 110, render: (i) => <span className={styles.numCell}>{fmtNum(i.availableStock)}</span> },
+  { key: 'availableStock', label: '販売可能在庫', defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (i) => i.availableStock ?? null, render: (i) => <span className={styles.numCell}>{fmtNum(i.availableStock)}</span> },
   // 効果測定
   { key: 'wishlistAddedAt',      label: '欲しいもの追加日',  defaultVisible: false, defaultWidth: 130, render: (i) => <span className={styles.dateCell}>{i.wishlistAddedAt ?? '準備中'}</span> },
   { key: 'wishlistRequestedQty', label: '追加希望数',       defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistRequestedQty)}</span> },
@@ -409,9 +448,18 @@ const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function WishlistTab({ variations }: Props) {
+export function WishlistTab({ variations, products = [] }: Props) {
   const hasData = variations.length > 0;
   const [cond, setCond] = useState<Conditions>(DEFAULT_CONDITIONS);
+  const [sortConfig, setSortConfig] = useState<SortConfig>(null);
+
+  const handleSort = useCallback((key: string) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  }, []);
 
   const [configs, setConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(WISHLIST_COLUMNS, WISHLIST_STORAGE_KEY)
@@ -498,7 +546,10 @@ export function WishlistTab({ variations }: Props) {
   // Sum of all visible column widths → sets explicit table width so fixed layout works
   const totalWidth = visibleCols.reduce((sum, { config, col }) => sum + getWidth(config, col), 0);
 
-  const allItems = useMemo(() => (hasData ? toWishlistItems(variations) : []), [variations, hasData]);
+  const allItems = useMemo(
+    () => (hasData ? toWishlistItems(variations, products) : []),
+    [variations, products, hasData],
+  );
 
   const categories = useMemo(
     () => [...new Set(variations.map((v) => v.category))].sort(),
@@ -528,6 +579,14 @@ export function WishlistTab({ variations }: Props) {
   );
 
   const filtered = useMemo(() => applyConditions(allItems, cond), [allItems, cond]);
+
+  const sorted = useMemo(() => {
+    if (!sortConfig) return filtered;
+    const col = WISHLIST_COLUMNS.find((c) => c.key === sortConfig.key);
+    if (!col?.sortValue) return filtered;
+    const { dir } = sortConfig;
+    return [...filtered].sort((a, b) => compareValues(col.sortValue!(a), col.sortValue!(b), dir));
+  }, [filtered, sortConfig]);
 
   const highCount = filtered.filter((i) => i.priority === '高').length;
   const midCount  = filtered.filter((i) => i.priority === '中').length;
@@ -683,7 +742,7 @@ export function WishlistTab({ variations }: Props) {
           <div className={styles.tablePanelHeader}>
             <p className={styles.tableNote} data-real={hasData || undefined}>
               {hasData
-                ? `表示中 ${filtered.length}件 / 全${allItems.length}件（仮判定）`
+                ? `表示中 ${sorted.length}件 / 全${allItems.length}件（仮判定）`
                 : '商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと候補が表示されます'}
             </p>
             <div className={styles.tablePanelBtns}>
@@ -696,10 +755,10 @@ export function WishlistTab({ variations }: Props) {
               />
               <button
                 className={styles.csvBtn}
-                onClick={() => exportCsv(filtered)}
-                disabled={filtered.length === 0}
+                onClick={() => exportCsv(sorted)}
+                disabled={sorted.length === 0}
               >
-                表示中{filtered.length}件をCSV出力
+                表示中{sorted.length}件をCSV出力
               </button>
             </div>
           </div>
@@ -708,7 +767,7 @@ export function WishlistTab({ variations }: Props) {
             <div className={styles.emptyGuide}>
               <p>商品登録CSVタブで商品データを取り込み、「商品一覧へ反映」を押すと、バリエーション別の欲しいもの候補を表示できます。</p>
             </div>
-          ) : filtered.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className={styles.emptyGuide}>
               <p>条件に一致する候補がありません。条件を変更してください。</p>
             </div>
@@ -727,17 +786,27 @@ export function WishlistTab({ variations }: Props) {
                   <tr>
                     {visibleCols.map(({ config, col }) => {
                       const w = getWidth(config, col);
+                      const isSorted = sortConfig?.key === config.key;
+                      const sortIcon = isSorted ? (sortConfig!.dir === 'asc' ? ' ▲' : ' ▼') : col.sortable ? ' ↕' : '';
                       return (
                         <th
                           key={config.key}
-                          className={styles.th}
+                          className={`${styles.th}${col.sortable ? ` ${styles.thSortable}` : ''}`}
                           style={{ width: w, minWidth: w }}
                           data-resizing={resizingKey === config.key || undefined}
+                          data-sorted={isSorted || undefined}
                         >
-                          <span className={styles.thLabel}>{col.label}</span>
+                          <span
+                            className={styles.thLabel}
+                            onClick={col.sortable ? () => handleSort(config.key) : undefined}
+                          >
+                            {col.label}
+                            {sortIcon && <span className={styles.sortIcon}>{sortIcon}</span>}
+                          </span>
                           <span
                             className={styles.resizeHandle}
                             onMouseDown={(e) => startResize(e, config.key, w)}
+                            onClick={(e) => e.stopPropagation()}
                           />
                         </th>
                       );
@@ -745,7 +814,7 @@ export function WishlistTab({ variations }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((item) => (
+                  {sorted.map((item) => (
                     <tr key={`${item.productNo}-${item.skuCode}`} className={styles.tr}>
                       {visibleCols.map(({ config, col }) => (
                         <td key={config.key} className={styles.td}>{col.render(item)}</td>

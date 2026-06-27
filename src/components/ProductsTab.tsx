@@ -18,11 +18,15 @@ type ColumnConfig = {
   width?: number;
 };
 
+type SortConfig = { key: string; dir: 'asc' | 'desc' } | null;
+
 type TableColumn<T> = {
   key: string;
   label: string;
   defaultVisible: boolean;
   defaultWidth?: number;
+  sortable?: boolean;
+  sortValue?: (row: T) => string | number | boolean | null | undefined;
   render: (row: T) => React.ReactNode;
 };
 
@@ -371,18 +375,20 @@ type FilterPanelProps = {
   keyword: string;
   category: string;
   status: string;
+  visible?: string;
   categories: string[];
   statuses: string[];
   onKeyword: (v: string) => void;
   onCategory: (v: string) => void;
   onStatus: (v: string) => void;
+  onVisible?: (v: string) => void;
   filteredCount: number;
   totalCount: number;
 };
 
 function FilterPanel({
-  keyword, category, status, categories, statuses,
-  onKeyword, onCategory, onStatus, filteredCount, totalCount,
+  keyword, category, status, visible, categories, statuses,
+  onKeyword, onCategory, onStatus, onVisible, filteredCount, totalCount,
 }: FilterPanelProps) {
   return (
     <div className={styles.filterPanel}>
@@ -411,6 +417,17 @@ function FilterPanel({
           {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
+      {onVisible && (
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>公開状態</label>
+          <select className={styles.filterSelect} value={visible ?? 'all'} onChange={(e) => onVisible(e.target.value)}>
+            <option value="all">全て</option>
+            <option value="public">公開中</option>
+            <option value="private">非公開</option>
+            <option value="unknown">不明</option>
+          </select>
+        </div>
+      )}
       <div className={styles.filterGroup}>
         <label className={styles.filterLabel}>コラボ/通常</label>
         <select className={styles.filterSelect} disabled>
@@ -684,35 +701,70 @@ function fmtBool(v: boolean | undefined): string {
   return v === true ? '対象' : v === false ? '—' : '準備中';
 }
 
+function fmtVisible(v: boolean | undefined | null): string {
+  if (v === true) return '公開中';
+  if (v === false) return '非公開';
+  return '—';
+}
+
+function fmtImportSource(v: MdProduct['importSource']): string {
+  if (v === 'csv') return 'CSV';
+  if (v === 'futureshop') return 'FS取込';
+  if (v === 'manual') return '手動';
+  return '—';
+}
+
+function compareValues(
+  a: string | number | boolean | null | undefined,
+  b: string | number | boolean | null | undefined,
+  dir: 'asc' | 'desc',
+): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  let cmp: number;
+  if (typeof a === 'string' && typeof b === 'string') {
+    cmp = a.localeCompare(b, 'ja');
+  } else {
+    cmp = a < b ? -1 : a > b ? 1 : 0;
+  }
+  return dir === 'asc' ? cmp : -cmp;
+}
+
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
-  { key: 'productNo',         label: '品番',           defaultVisible: true,  defaultWidth: 90,  render: (p) => <span className={styles.productNo}>{p.productNo}</span> },
-  { key: 'productName',       label: '商品名',         defaultVisible: true,  defaultWidth: 220, render: (p) => <span className={styles.productName}>{p.productName}</span> },
-  { key: 'category',          label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 130, render: (p) => <span className={styles.categoryBadge}>{p.category}</span> },
-  { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, render: (p) => <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span> },
-  { key: 'skuCount',          label: 'SKU数',          defaultVisible: true,  defaultWidth: 80,  render: (p) => <span className={styles.numCell}>{p.skuCount ?? '—'}</span> },
+  { key: 'productNo',         label: '品番',           defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.productNo, render: (p) => <span className={styles.productNo}>{p.productNo}</span> },
+  { key: 'productName',       label: '商品名',         defaultVisible: true,  defaultWidth: 220, sortable: true, sortValue: (p) => p.productName, render: (p) => <span className={styles.productName}>{p.productName}</span> },
+  { key: 'category',          label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 130, sortable: true, sortValue: (p) => p.category, render: (p) => <span className={styles.categoryBadge}>{p.category}</span> },
+  { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (p) => p.releaseDate ?? null, render: (p) => <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span> },
+  { key: 'skuCount',          label: 'SKU数',          defaultVisible: true,  defaultWidth: 80,  sortable: true, sortValue: (p) => p.skuCount ?? null, render: (p) => <span className={styles.numCell}>{p.skuCount ?? '—'}</span> },
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'recentSales',       label: '直近売上',       defaultVisible: true,  defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, render: (p) => <StatusPill status={p.status} /> },
-  { key: 'nextAction',        label: '次アクション',   defaultVisible: true,  defaultWidth: 180, render: (p) => <ActionPill action={p.nextAction} /> },
+  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (p) => p.status, render: (p) => <StatusPill status={p.status} /> },
+  { key: 'nextAction',        label: '次アクション',   defaultVisible: true,  defaultWidth: 180, sortable: true, sortValue: (p) => p.nextAction, render: (p) => <ActionPill action={p.nextAction} /> },
   { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (p) => <ProductThumbnail imageUrl={p.imageUrl} alt={p.productName} /> },
+  // 公開状態・取込情報
+  { key: 'visibleStatus',     label: '公開状態',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.visible ?? null, render: (p) => <span className={styles.visiblePill} data-v={p.visible === true ? 'public' : p.visible === false ? 'private' : 'unknown'}>{fmtVisible(p.visible)}</span> },
+  { key: 'hasPreorder',       label: '予約販売',       defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.hasPreorder ?? null, render: (p) => <span className={styles.naCell}>{p.hasPreorder == null ? '—' : p.hasPreorder ? 'あり' : 'なし'}</span> },
+  { key: 'hasPlannedStockFlag', label: '予定在庫',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.hasPlannedStock ?? null, render: (p) => <span className={styles.naCell}>{p.hasPlannedStock == null ? '—' : p.hasPlannedStock ? 'あり' : 'なし'}</span> },
+  { key: 'importSource',      label: '取込元',         defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.importSource ?? null, render: (p) => <span className={styles.naCell}>{fmtImportSource(p.importSource)}</span> },
   // 在庫区分
   { key: 'stockType',         label: '在庫区分',       defaultVisible: true,  defaultWidth: 100, render: (p) => <span className={styles.naCell}>{fmtStockType(p.stockType)}</span> },
-  { key: 'actualStock',       label: '実在庫',         defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.actualStock)}</span> },
+  { key: 'actualStock',       label: '実在庫',         defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.actualStock ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.actualStock)}</span> },
   { key: 'preorderStock',     label: '予約在庫',       defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.preorderStock)}</span> },
   { key: 'plannedStock',      label: '予定在庫',       defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.plannedStock)}</span> },
-  { key: 'availableStock',    label: '販売可能在庫',   defaultVisible: true,  defaultWidth: 110, render: (p) => <span className={styles.numCell}>{fmtNum(p.availableStock)}</span> },
+  { key: 'availableStock',    label: '販売可能在庫',   defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (p) => p.availableStock ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.availableStock)}</span> },
   // 売上データ
-  { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty7d)}</span> },
-  { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty14d)}</span> },
-  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
-  { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount7d)}</span> },
+  { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty7d)}</span> },
+  { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty14d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty14d)}</span> },
+  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
+  { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount14d)}</span> },
   { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount30d)}</span> },
   { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesQty)}</span> },
-  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesAmount)}</span> },
+  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.monthlySalesAmount ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesAmount)}</span> },
   // 販促・予算管理
   { key: 'budgetGroup',       label: '予算グループ',   defaultVisible: false, defaultWidth: 110, render: (p) => <span className={styles.naCell}>{p.budgetGroup ?? '準備中'}</span> },
   { key: 'collaborationName', label: 'コラボ名',       defaultVisible: false, defaultWidth: 130, render: (p) => <span className={styles.naCell}>{p.collaborationName ?? '準備中'}</span> },
@@ -724,29 +776,29 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
 ];
 
 const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
-  { key: 'productNo',         label: '品番',           defaultVisible: true,  defaultWidth: 90,  render: (v) => <span className={styles.productNo}>{v.productNo}</span> },
-  { key: 'productName',       label: '商品名',         defaultVisible: true,  defaultWidth: 220, render: (v) => <span className={styles.productName}>{v.productName}</span> },
-  { key: 'skuCode',           label: 'SKU',            defaultVisible: true,  defaultWidth: 120, render: (v) => <span className={styles.skuCell}>{v.skuCode.replaceAll('_', '')}</span> },
-  { key: 'color',             label: 'カラー',         defaultVisible: true,  defaultWidth: 120, render: (v) => <span className={styles.colorCell}>{v.color ?? '—'}</span> },
-  { key: 'size',              label: 'サイズ',         defaultVisible: true,  defaultWidth: 80,  render: (v) => <span className={styles.sizeCell}>{v.size ?? '—'}</span> },
-  { key: 'category',          label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 130, render: (v) => <span className={styles.categoryBadge}>{v.category}</span> },
-  { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, render: (v) => <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span> },
+  { key: 'productNo',         label: '品番',           defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.productNo, render: (v) => <span className={styles.productNo}>{v.productNo}</span> },
+  { key: 'productName',       label: '商品名',         defaultVisible: true,  defaultWidth: 220, sortable: true, sortValue: (v) => v.productName, render: (v) => <span className={styles.productName}>{v.productName}</span> },
+  { key: 'skuCode',           label: 'SKU',            defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.skuCode, render: (v) => <span className={styles.skuCell}>{v.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',             label: 'カラー',         defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.color ?? null, render: (v) => <span className={styles.colorCell}>{v.color ?? '—'}</span> },
+  { key: 'size',              label: 'サイズ',         defaultVisible: true,  defaultWidth: 80,  sortable: true, sortValue: (v) => v.size ?? null, render: (v) => <span className={styles.sizeCell}>{v.size ?? '—'}</span> },
+  { key: 'category',          label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 130, sortable: true, sortValue: (v) => v.category, render: (v) => <span className={styles.categoryBadge}>{v.category}</span> },
+  { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (v) => v.releaseDate ?? null, render: (v) => <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span> },
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'recentSales',       label: '直近売上',       defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, render: (v) => <StatusPill status={v.status} /> },
+  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.status, render: (v) => <StatusPill status={v.status} /> },
   { key: 'nextAction',        label: '次アクション',   defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction} /> },
   { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (v) => <ProductThumbnail imageUrl={v.imageUrl} alt={v.productName} /> },
   // 在庫区分
   { key: 'stockType',         label: '在庫区分',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.naCell}>{fmtStockType(v.stockType)}</span> },
-  { key: 'actualStock',       label: '実在庫',         defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.actualStock)}</span> },
+  { key: 'actualStock',       label: '実在庫',         defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (v) => v.actualStock ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.actualStock)}</span> },
   { key: 'preorderStock',     label: '予約在庫',       defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.preorderStock)}</span> },
   { key: 'plannedStock',      label: '予定在庫',       defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.plannedStock)}</span> },
-  { key: 'availableStock',    label: '販売可能在庫',   defaultVisible: true,  defaultWidth: 110, render: (v) => <span className={styles.numCell}>{fmtNum(v.availableStock)}</span> },
+  { key: 'availableStock',    label: '販売可能在庫',   defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (v) => v.availableStock ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.availableStock)}</span> },
   // 売上データ
-  { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty7d)}</span> },
+  { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty7d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty7d)}</span> },
   { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty14d)}</span> },
-  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty30d)}</span> },
+  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty30d)}</span> },
   { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount14d)}</span> },
   { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount30d)}</span> },
@@ -770,9 +822,11 @@ type ProductTablePanelProps = {
   configs: ColumnConfig[];
   columns: TableColumn<MdProduct>[];
   onWidthChange: (key: string, width: number) => void;
+  sortConfig?: SortConfig;
+  onSort?: (key: string) => void;
 };
 
-function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns, onWidthChange }: ProductTablePanelProps) {
+function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, columns, onWidthChange, sortConfig, onSort }: ProductTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
   const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
   const [resizingKey, setResizingKey] = useState<string | null>(null);
@@ -869,17 +923,27 @@ function ProductTablePanel({ products, totalCount, isReal, savedAt, configs, col
             <tr>
               {visibleCols.map(({ config, col }) => {
                 const w = getWidth(config, col);
+                const isSorted = sortConfig?.key === config.key;
+                const sortIcon = isSorted ? (sortConfig!.dir === 'asc' ? ' ▲' : ' ▼') : col.sortable ? ' ↕' : '';
                 return (
                   <th
                     key={config.key}
-                    className={styles.th}
+                    className={`${styles.th}${col.sortable ? ` ${styles.thSortable}` : ''}`}
                     style={{ width: w, minWidth: w }}
                     data-resizing={resizingKey === config.key || undefined}
+                    data-sorted={isSorted || undefined}
                   >
-                    <span className={styles.thLabel}>{col.label}</span>
+                    <span
+                      className={styles.thLabel}
+                      onClick={col.sortable ? () => onSort?.(config.key) : undefined}
+                    >
+                      {col.label}
+                      {sortIcon && <span className={styles.sortIcon}>{sortIcon}</span>}
+                    </span>
                     <span
                       className={styles.resizeHandle}
                       onMouseDown={(e) => startResize(e, config.key, w)}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </th>
                 );
@@ -916,9 +980,11 @@ type VariationTablePanelProps = {
   configs: ColumnConfig[];
   columns: TableColumn<MdVariation>[];
   onWidthChange: (key: string, width: number) => void;
+  sortConfig?: SortConfig;
+  onSort?: (key: string) => void;
 };
 
-function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns, onWidthChange }: VariationTablePanelProps) {
+function VariationTablePanel({ variations, totalCount, hasVariations, configs, columns, onWidthChange, sortConfig, onSort }: VariationTablePanelProps) {
   const colMap = useMemo(() => new Map(columns.map((c) => [c.key, c])), [columns]);
   const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
   const [resizingKey, setResizingKey] = useState<string | null>(null);
@@ -1018,17 +1084,27 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
             <tr>
               {visibleCols.map(({ config, col }) => {
                 const w = getWidth(config, col);
+                const isSorted = sortConfig?.key === config.key;
+                const sortIcon = isSorted ? (sortConfig!.dir === 'asc' ? ' ▲' : ' ▼') : col.sortable ? ' ↕' : '';
                 return (
                   <th
                     key={config.key}
-                    className={styles.th}
+                    className={`${styles.th}${col.sortable ? ` ${styles.thSortable}` : ''}`}
                     style={{ width: w, minWidth: w }}
                     data-resizing={resizingKey === config.key || undefined}
+                    data-sorted={isSorted || undefined}
                   >
-                    <span className={styles.thLabel}>{col.label}</span>
+                    <span
+                      className={styles.thLabel}
+                      onClick={col.sortable ? () => onSort?.(config.key) : undefined}
+                    >
+                      {col.label}
+                      {sortIcon && <span className={styles.sortIcon}>{sortIcon}</span>}
+                    </span>
                     <span
                       className={styles.resizeHandle}
                       onMouseDown={(e) => startResize(e, config.key, w)}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </th>
                 );
@@ -1108,9 +1184,12 @@ export function ProductsTab({
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
+  const [visible, setVisible] = useState('all');
   const [varKeyword, setVarKeyword] = useState('');
   const [varCategory, setVarCategory] = useState('');
   const [varStatus, setVarStatus] = useState('');
+  const [productSortConfig, setProductSortConfig] = useState<SortConfig>(null);
+  const [varSortConfig, setVarSortConfig] = useState<SortConfig>(null);
 
   const [productConfigs, setProductConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(PRODUCT_COLUMNS, PRODUCT_STORAGE_KEY)
@@ -1118,6 +1197,22 @@ export function ProductsTab({
   const [variationConfigs, setVariationConfigs] = useState<ColumnConfig[]>(() =>
     loadColumnConfig(VARIATION_COLUMNS, VARIATION_STORAGE_KEY)
   );
+
+  const handleProductSort = useCallback((key: string) => {
+    setProductSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  }, []);
+
+  const handleVarSort = useCallback((key: string) => {
+    setVarSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  }, []);
 
   const handleProductChange = (newConfigs: ColumnConfig[]) => {
     setProductConfigs(newConfigs);
@@ -1169,9 +1264,12 @@ export function ProductsTab({
       if (kw && !p.productNo.toLowerCase().includes(kw) && !p.productName.toLowerCase().includes(kw)) return false;
       if (category && p.category !== category) return false;
       if (status && p.status !== status) return false;
+      if (visible === 'public'  && p.visible !== true)  return false;
+      if (visible === 'private' && p.visible !== false) return false;
+      if (visible === 'unknown' && p.visible != null)   return false;
       return true;
     });
-  }, [activeData, keyword, category, status]);
+  }, [activeData, keyword, category, status, visible]);
 
   const varCategories = useMemo(
     () => Array.from(new Set(variations.map((v) => v.category))).filter(Boolean),
@@ -1195,6 +1293,22 @@ export function ProductsTab({
     });
   }, [variations, varKeyword, varCategory, varStatus]);
 
+  const sortedProducts = useMemo(() => {
+    if (!productSortConfig) return filtered;
+    const col = PRODUCT_COLUMNS.find((c) => c.key === productSortConfig.key);
+    if (!col?.sortValue) return filtered;
+    const { dir } = productSortConfig;
+    return [...filtered].sort((a, b) => compareValues(col.sortValue!(a), col.sortValue!(b), dir));
+  }, [filtered, productSortConfig]);
+
+  const sortedVariations = useMemo(() => {
+    if (!varSortConfig) return filteredVariations;
+    const col = VARIATION_COLUMNS.find((c) => c.key === varSortConfig.key);
+    if (!col?.sortValue) return filteredVariations;
+    const { dir } = varSortConfig;
+    return [...filteredVariations].sort((a, b) => compareValues(col.sortValue!(a), col.sortValue!(b), dir));
+  }, [filteredVariations, varSortConfig]);
+
   const productCsvNote = isReal
     ? filtered.length !== activeData.length
       ? `表示中${filtered.length}件 / 全${activeData.length}件`
@@ -1207,6 +1321,10 @@ export function ProductsTab({
       : `${filteredVariations.length}件を出力`
     : 'バリエーションデータがありません。商品登録CSVタブから反映してください。';
 
+  // CSV exports use sorted data so output order matches display
+  const handleProductCsv = () => downloadMdProductsCsv(sortedProducts);
+  const handleVariationCsv = () => downloadMdVariationsCsv(sortedVariations);
+
   return (
     <div className={styles.root}>
       <DashboardHeader
@@ -1215,11 +1333,7 @@ export function ProductsTab({
         onClearProducts={onClearProducts ?? (() => {})}
         csvLabel={viewMode === 'product' ? '⬇ 商品一覧.csv' : '⬇ バリエーション一覧.csv'}
         csvNote={viewMode === 'product' ? productCsvNote : variationCsvNote}
-        onCsvDownload={
-          viewMode === 'product'
-            ? () => downloadMdProductsCsv(filtered)
-            : () => downloadMdVariationsCsv(filteredVariations)
-        }
+        onCsvDownload={viewMode === 'product' ? handleProductCsv : handleVariationCsv}
         csvDisabled={viewMode === 'product' ? !isReal : !hasVariations}
         onSyncStocks={onSyncStocks}
         syncStatus={syncStatus}
@@ -1245,22 +1359,26 @@ export function ProductsTab({
               keyword={keyword}
               category={category}
               status={status}
+              visible={visible}
               categories={categories}
               statuses={statuses}
               onKeyword={setKeyword}
               onCategory={setCategory}
               onStatus={setStatus}
+              onVisible={setVisible}
               filteredCount={filtered.length}
               totalCount={activeData.length}
             />
             <ProductTablePanel
-              products={filtered}
+              products={sortedProducts}
               totalCount={activeData.length}
               isReal={isReal}
               savedAt={savedAt}
               configs={productConfigs}
               columns={PRODUCT_COLUMNS}
               onWidthChange={handleProductWidthChange}
+              sortConfig={productSortConfig}
+              onSort={handleProductSort}
             />
           </div>
           <NextPhaseCard />
@@ -1282,12 +1400,14 @@ export function ProductsTab({
               totalCount={variations.length}
             />
             <VariationTablePanel
-              variations={filteredVariations}
+              variations={sortedVariations}
               totalCount={variations.length}
               hasVariations={hasVariations}
               configs={variationConfigs}
               columns={VARIATION_COLUMNS}
               onWidthChange={handleVariationWidthChange}
+              sortConfig={varSortConfig}
+              onSort={handleVarSort}
             />
           </div>
         </>

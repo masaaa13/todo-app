@@ -546,3 +546,18 @@
   color: var(--color-success);
   font-weight: 600;
 }
+
+/* ── Sent badge ── */
+.sentBadge {
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #16a34a;
+  border: 1px solid #86efac;
+  vertical-align: middle;
+}

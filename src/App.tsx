@@ -303,7 +303,6 @@ function App() {
                     setMdProducts(products);
                     setMdProductsSavedAt(now);
                     setMdVariations(variations);
-                    setActiveTab('products');
                   }}
                 />
               )}
