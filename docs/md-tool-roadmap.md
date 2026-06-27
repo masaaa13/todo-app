@@ -452,61 +452,78 @@ npm run fs:orders:check -- --days 7 --product 1266302
 
 ---
 
-## Phase 4.8: FutureShop 商品検索API検証（実装済み）
+## Phase 4.8: FutureShop 商品検索API検証（完了）
 
 **目的:**
 
-FutureShop 商品検索APIを直接叩き、MdProduct / MdVariation 変換に必要な  
-フィールド（商品URL・画像URL・バリエーション・予定在庫）が取得できるか検証する。
+FutureShop 商品検索APIを ConoHa VPS proxy 経由で実行し、MdProduct / MdVariation 変換に必要な  
+フィールド（商品URL・URI・画像URL・バリエーション・予約/予定在庫）が取得できることを確認する。
 
 **方針:**
 
-- 認証: OAuth2 client_credentials フロー（VPS不使用、FutureShop API へ直接接続）
-- 環境変数: `FS_CLIENT_ID` / `FS_CLIENT_SECRET` / `FS_SHOP_KEY`（.env.local）
+- MacからFutureShop OAuth2トークンエンドポイントへの直接接続はIPアドレス制限により403になる
+- ConoHa VPS に `POST /check-products` を追加し、VPS proxy 経由で呼び出す構成に変更
+- 既存の `getToken()` と `requireAuth` をVPS側で流用
+- 環境変数: `FS_PROXY_BASE_URL` / `FS_PROXY_TOKEN`（.env.local）
 - 個人情報フィールドは保存・出力しない
-- シークレット・アクセストークンはコンソール・ファイルともに非表示（[MASKED]）
+- シークレット・トークン実値はコンソール・ファイルともに非表示（[MASKED]）
 
 **検証スクリプト:**
 
 ```bash
 npm run fs:products:check -- --product 1266302
 npm run fs:products:check -- --product 1266302 --types variation,image,plannedStock
-npm run fs:products:check -- --product 1266302 --count 10
+npm run fs:products:check -- --products 1266302,1266303
 ```
 
 **エンドポイント:**
 
 | メソッド | パス | 説明 |
 |----------|------|------|
-| `POST` | `/oauth/token` | client_credentials フロー（Basic認証 + X-SHOP-KEY） |
-| `GET`  | `/admin-api/v1/products` | 商品検索（productNo / types / count） |
+| `POST` | `{FS_PROXY_BASE_URL}/check-products` | VPS proxy → FutureShop /admin-api/v1/products |
 
 使用環境変数:
-- `FS_CLIENT_ID` — FutureShop OAuth2 クライアントID
-- `FS_CLIENT_SECRET` — FutureShop OAuth2 クライアントシークレット
-- `FS_SHOP_KEY` — X-SHOP-KEY ヘッダー値
+- `FS_PROXY_BASE_URL` — ConoHa VPS proxy のベースURL
+- `FS_PROXY_TOKEN` — VPS proxy の Bearer トークン
 
-**検出対象フィールド:**
+**確認済みフィールドマッピング（品番 1266302 で検証）:**
 
-| フィールド | 確認項目 |
-|---|---|
-| 商品URL | `productList[].url` / `urlCode` 等 |
-| 商品URI | `productList[].uri` |
-| 商品名 | `goodsName` / `name` / `productName` |
-| バリエーション | `variationList[]` 有無と件数 |
-| SKUコード | `variation.skuNo`（10桁） |
-| 横軸枝番・名称 | `horizontalNo` / `horizontalName` |
-| 縦軸枝番・名称 | `verticalNo` / `verticalName` |
-| 画像URL | `imageList[].lImagePath` 等 |
-| バリエーション画像 | `variation.imageInfo` 等 |
-| JANコード | `variation.janCode` |
-| 在庫数 | `variation.inventoryInfo.count` 等 |
-| 予定在庫 | `plannedStockInfo` 等（`types=plannedStock` 要指定） |
-| 予約販売 | `preorderInfo` 等（`types=preorder` 要指定） |
+| MDツール用途 | VPS responseフィールド | 確認結果 |
+|---|---|---|
+| 商品ページURL（フル） | `products[].uri` | ✓ `https://store.candystripper.jp/c/.../1266302` |
+| URLコード（短縮） | `products[].url` | ✓ `"1266302"` |
+| 商品名 | `products[].name` | ✓ `"STAR FRILL DENIM PANTS"` |
+| 定価（税込） | `products[].unitPrice` | ✓ `24200` |
+| 公開状態 | `products[].visible` | ✓ `true` |
+| 代表画像URL | `products[].imageUrl` | ✓ 取得済み |
+| 画像リスト（全サイズ） | `products[].imageList[]` | ✓ **27件** |
+| SKUコード（10桁） | `products[].variations[].skuCode` | ✓ 例: `1266302789` |
+| カラー枝番 | `variations[].colorBranchNo` | ✓ 例: `"78"` |
+| カラー名 | `variations[].colorName` | ✓ 例: `"INDIGO"` |
+| サイズ枝番 | `variations[].sizeBranchNo` | ✓ 例: `"9"` |
+| サイズ名 | `variations[].sizeName` | ✓ 例: `"F"` |
+| JANコード | `variations[].janCode` | ✓ 取得済み |
+| 在庫数 | `variations[].stockCount` | — null（`/check-stock` を使用） |
+| 予約販売 | `products[].hasPreorder` | ✓ `true` |
+| 予定在庫 | `products[].hasPlannedStock` | ✓ `true` |
+
+**FutureShop rawImageKeys（確認済み画像パス種別）:**
+
+`originalImagePath` / `xxlImagePath` / `xlImagePath` / `lImagePath` / `mImagePath` / `sImagePath` / `xsImagePath`
+
+- 現在の VPS imageList マッピングは `originalImagePath` / `lImagePath` / `mImagePath` のみ
+- 必要に応じて `xxlImagePath` / `sImagePath` / `xsImagePath` を VPS 側に追加可能
+
+**FutureShop rawVariationKeys（確認済みバリエーションフィールド）:**
+
+`skuNo` / `horizontalNo` / `horizontalName` / `verticalNo` / `verticalName` / `janCode` / `count` / `price` / `representativeVariation` / `leadTime` / `weight`
+
+- `count` はバリエーションオブジェクト直下に存在（`inventoryInfo.count` ではない）
+- 在庫数を `/check-products` から取得したい場合は VPS 側で `v.count` をマップする
 
 **保存先（git管理外）:**
 
-- `tmp/futureshop-products-response.sample.json` — マスク済みフルレスポンス
+- `tmp/futureshop-products-response.sample.json` — VPS レスポンス全体
 - `tmp/futureshop-products-response.summary.json` — MDツール反映用サマリー
 
 **今回実装しないこと:**
