@@ -99,6 +99,14 @@ type ImportSavedState = {
   specMapData: Record<string, SpecData>;
   materialMapData: Record<string, string>; // merged (xlsx + manual)
   releaseDateMapData: Record<string, string>;
+  // Image URL fields (optional for backward compat)
+  imageUrlFilename?: string;
+  imageUrlImportedAt?: string;
+  imageUrlMapData?: ImageUrlMap;
+  imageUrlSkuCount?: number;
+  imageUrlProductCount?: number;
+  imageUrlSkipCount?: number;
+  imageUrlWarningCount?: number;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1662,24 +1670,32 @@ type FileIntakeCardProps = {
   materialFilename: string;
   mdFilename: string;
   swatchFilename: string;
+  imageUrlFilename: string;
+  imageUrlSkuCount: number;
+  imageUrlProductCount: number;
+  imageUrlSkipCount: number;
+  imageUrlWarningCount: number;
   captionLoading: boolean;
   specLoading: boolean;
   materialLoading: boolean;
   mdLoading: boolean;
   swatchLoading: boolean;
+  imageUrlLoading: boolean;
   onCaptionFile: (file: File) => Promise<void>;
   onSpecFile: (file: File) => Promise<void>;
   onMaterialFile: (file: File) => Promise<void>;
   onMdFile: (file: File) => Promise<void>;
   onSwatchFile: (file: File) => Promise<void>;
+  onImageUrlFile: (file: File) => Promise<void>;
   onGoToColumns: () => void;
 };
 
 function FileIntakeCard({
   skuFilename, skuCount,
   captionFilename, specFilename, materialFilename, mdFilename, swatchFilename,
-  captionLoading, specLoading, materialLoading, mdLoading, swatchLoading,
-  onCaptionFile, onSpecFile, onMaterialFile, onMdFile, onSwatchFile,
+  imageUrlFilename, imageUrlSkuCount, imageUrlProductCount, imageUrlSkipCount, imageUrlWarningCount,
+  captionLoading, specLoading, materialLoading, mdLoading, swatchLoading, imageUrlLoading,
+  onCaptionFile, onSpecFile, onMaterialFile, onMdFile, onSwatchFile, onImageUrlFile,
   onGoToColumns,
 }: FileIntakeCardProps) {
   return (
@@ -1726,6 +1742,17 @@ function FileIntakeCard({
           filename={mdFilename}
           loading={mdLoading}
           onFile={onMdFile}
+        />
+        <SupplementSlot
+          label="画像URL"
+          desc="商品画像サムネイルに使用する画像URL CSVをアップロード"
+          hint="画像URL CSVをドロップ"
+          accept=".csv,.xlsx,.xls"
+          filename={imageUrlFilename
+            ? `${imageUrlFilename}（SKU ${imageUrlSkuCount}件 / 品番 ${imageUrlProductCount}件${imageUrlSkipCount > 0 ? ` / スキップ ${imageUrlSkipCount}件` : ''}${imageUrlWarningCount > 0 ? ` / 警告 ${imageUrlWarningCount}件` : ''}）`
+            : ''}
+          loading={imageUrlLoading}
+          onFile={onImageUrlFile}
         />
       </div>
       <details className={styles.swatchDetails}>
@@ -2221,6 +2248,103 @@ function countValidSkus(rows: ReviewRow[], colMap: ColMap): number {
 }
 
 
+// ── Image URL import ─────────────────────────────────────────────────────────
+
+type ImageUrlMap = {
+  byProductNo: Record<string, string>;
+  bySkuCode: Record<string, string>;
+};
+
+type ImageUrlImportResult = {
+  map: ImageUrlMap;
+  skuCount: number;
+  productCount: number;
+  skipCount: number;
+  warningCount: number;
+};
+
+const EMPTY_IMAGE_URL_MAP: ImageUrlMap = { byProductNo: {}, bySkuCode: {} };
+
+function normalizeSku(sku: string): string {
+  return sku.replace(/_/g, '');
+}
+
+function isValidImageUrl(s: string): boolean {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+async function parseImageUrlFile(file: File): Promise<ImageUrlImportResult> {
+  const byProductNo: Record<string, string> = {};
+  const bySkuCode: Record<string, string> = {};
+  let skipCount = 0;
+  let warningCount = 0;
+
+  const PRODUCT_NO_KEYS = ['品番', '商品番号', 'productNo', 'product_no', 'product'];
+  const SKU_KEYS = ['SKU', 'sku', '商品管理番号', 'skuCode', 'sku_code'];
+  const IMAGE_URL_KEYS = ['画像URL', 'imageUrl', 'image_url', 'image', '商品画像', 'メイン画像', 'サムネイル', 'thumbnail', 'url'];
+
+  let rows: Record<string, string>[];
+
+  if (file.name.toLowerCase().endsWith('.csv')) {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return { map: EMPTY_IMAGE_URL_MAP, skuCount: 0, productCount: 0, skipCount: 0, warningCount: 0 };
+    const rawHeaders = lines[0].split(',').map((h) => h.trim().replace(/^["']|["']$/g, ''));
+    rows = lines.slice(1).map((line) => {
+      const vals = line.split(',').map((v) => v.trim().replace(/^["']|["']$/g, ''));
+      return Object.fromEntries(rawHeaders.map((h, i) => [h, vals[i] ?? '']));
+    });
+  } else {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '', raw: false });
+  }
+
+  if (rows.length === 0) return { map: EMPTY_IMAGE_URL_MAP, skuCount: 0, productCount: 0, skipCount: 0, warningCount: 0 };
+
+  const headers = Object.keys(rows[0]);
+  const productNoKey = PRODUCT_NO_KEYS.find((k) => headers.includes(k)) ?? '';
+  const skuKey      = SKU_KEYS.find((k) => headers.includes(k)) ?? '';
+  const imageUrlKey = IMAGE_URL_KEYS.find((k) => headers.includes(k)) ?? '';
+
+  if (!imageUrlKey) {
+    return { map: EMPTY_IMAGE_URL_MAP, skuCount: 0, productCount: 0, skipCount: rows.length, warningCount: 0 };
+  }
+
+  for (const row of rows) {
+    const imageUrl  = (row[imageUrlKey] ?? '').trim();
+    if (!imageUrl) { skipCount++; continue; }
+    if (!isValidImageUrl(imageUrl)) { warningCount++; skipCount++; continue; }
+
+    const productNo = productNoKey ? (row[productNoKey] ?? '').trim() : '';
+    const rawSku    = skuKey ? (row[skuKey] ?? '').trim() : '';
+    const sku       = rawSku ? normalizeSku(rawSku) : '';
+
+    if (sku) {
+      bySkuCode[sku] = imageUrl;
+    } else if (productNo) {
+      byProductNo[productNo] = imageUrl;
+    } else {
+      skipCount++;
+    }
+  }
+
+  return {
+    map: { byProductNo, bySkuCode },
+    skuCount: Object.keys(bySkuCode).length,
+    productCount: Object.keys(byProductNo).length,
+    skipCount,
+    warningCount,
+  };
+}
+
 function saveImportStateToStorage(state: ImportSavedState): void {
   try {
     localStorage.setItem(IMPORT_STATE_KEY, JSON.stringify(state));
@@ -2366,6 +2490,7 @@ function reviewRowsToMdProducts(
   colMap: ColMap,
   releaseDateMap: Map<string, string>,
   supplementAlerts: SupplementAlerts,
+  imageUrlMap?: ImageUrlMap,
 ): MdProduct[] {
   const noMaterialSet = new Set(supplementAlerts.noMaterial);
   const noCaptionSet = new Set(supplementAlerts.noCaption);
@@ -2414,6 +2539,20 @@ function reviewRowsToMdProducts(
       nextAction = 'CSV出力';
     }
 
+    let imageUrl: string | undefined;
+    if (imageUrlMap) {
+      imageUrl = imageUrlMap.byProductNo[productNo];
+      if (!imageUrl) {
+        // fall back to first SKU-level image for this productNo
+        for (const r of rows) {
+          const pno = r.productNo || rv(r.rawData, colMap.productNo);
+          if (pno !== productNo) continue;
+          const sku = normalizeSku(r.skuNo || rv(r.rawData, colMap.skuNo));
+          if (sku && imageUrlMap.bySkuCode[sku]) { imageUrl = imageUrlMap.bySkuCode[sku]; break; }
+        }
+      }
+    }
+
     products.push({
       productNo,
       productName,
@@ -2425,7 +2564,7 @@ function reviewRowsToMdProducts(
       sellThroughRate: null,
       status,
       nextAction,
-      imageUrl: undefined,
+      imageUrl,
     });
   }
 
@@ -2437,6 +2576,7 @@ function reviewRowsToMdVariations(
   colMap: ColMap,
   releaseDateMap: Map<string, string>,
   supplementAlerts: SupplementAlerts,
+  imageUrlMap?: ImageUrlMap,
 ): MdVariation[] {
   const noMaterialSet = new Set(supplementAlerts.noMaterial);
   const noCaptionSet = new Set(supplementAlerts.noCaption);
@@ -2471,10 +2611,15 @@ function reviewRowsToMdVariations(
       status = '登録準備OK'; nextAction = 'CSV出力';
     }
 
+    const normalizedSku = normalizeSku(skuCode);
+    const imageUrl = imageUrlMap
+      ? (imageUrlMap.bySkuCode[normalizedSku] ?? imageUrlMap.byProductNo[productNo])
+      : undefined;
+
     variations.push({
       productNo, productName, skuCode, color, size, category, releaseDate,
       status, nextAction, ecStock: null, recentSales: null, sellThroughRate: null,
-      imageUrl: undefined,
+      imageUrl,
     });
   }
 
@@ -2529,6 +2674,16 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
   const [releaseDateParseResult, setReleaseDateParseResult] = useState<ReleaseDateParseResult | null>(null);
   const [mdFilename, setMdFilename] = useState('');
   const [mdLoading, setMdLoading] = useState(false);
+
+  // Image URL import state
+  const [imageUrlMap, setImageUrlMap] = useState<ImageUrlMap>(EMPTY_IMAGE_URL_MAP);
+  const [imageUrlFilename, setImageUrlFilename] = useState('');
+  const [imageUrlLoading, setImageUrlLoading] = useState(false);
+  const [imageUrlImportedAt, setImageUrlImportedAt] = useState('');
+  const [imageUrlSkuCount, setImageUrlSkuCount] = useState(0);
+  const [imageUrlProductCount, setImageUrlProductCount] = useState(0);
+  const [imageUrlSkipCount, setImageUrlSkipCount] = useState(0);
+  const [imageUrlWarningCount, setImageUrlWarningCount] = useState(0);
 
   // localStorage: import state and history
   const [savedState, setSavedState] = useState<ImportSavedState | null>(() => loadImportStateFromStorage());
@@ -2718,6 +2873,24 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
     }
   };
 
+  const handleImageUrlFile = async (file: File) => {
+    setImageUrlLoading(true);
+    try {
+      const result = await parseImageUrlFile(file);
+      setImageUrlMap(result.map);
+      setImageUrlFilename(file.name);
+      setImageUrlImportedAt(new Date().toLocaleString('ja-JP'));
+      setImageUrlSkuCount(result.skuCount);
+      setImageUrlProductCount(result.productCount);
+      setImageUrlSkipCount(result.skipCount);
+      setImageUrlWarningCount(result.warningCount);
+    } catch {
+      // silent — image URL import is optional
+    } finally {
+      setImageUrlLoading(false);
+    }
+  };
+
   // Keep importState in sync as supplement files are loaded during review step
   useEffect(() => {
     if (step !== 'review' || reviewRows.length === 0) return;
@@ -2736,12 +2909,21 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
       specMapData: Object.fromEntries(specMap),
       materialMapData: Object.fromEntries(mergedMaterialMap),
       releaseDateMapData: Object.fromEntries(releaseDateMap),
+      imageUrlFilename,
+      imageUrlImportedAt,
+      imageUrlMapData: imageUrlFilename ? imageUrlMap : undefined,
+      imageUrlSkuCount,
+      imageUrlProductCount,
+      imageUrlSkipCount,
+      imageUrlWarningCount,
     };
     saveImportStateToStorage(state);
     setSavedState(state);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, captionFilename, specFilename, materialFilename, mdFilename,
-      captionMap, specMap, mergedMaterialMap, releaseDateMap]);
+      captionMap, specMap, mergedMaterialMap, releaseDateMap,
+      imageUrlFilename, imageUrlMap, imageUrlSkuCount, imageUrlProductCount,
+      imageUrlSkipCount, imageUrlWarningCount]);
 
   const commitToReview = (rows: ReviewRow[], map: ColMap, fname: string) => {
     const skuCount = countValidSkus(rows, map);
@@ -2762,6 +2944,13 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
       specMapData: Object.fromEntries(specMap),
       materialMapData: Object.fromEntries(mergedMaterialMap),
       releaseDateMapData: Object.fromEntries(releaseDateMap),
+      imageUrlFilename,
+      imageUrlImportedAt,
+      imageUrlMapData: imageUrlFilename ? imageUrlMap : undefined,
+      imageUrlSkuCount,
+      imageUrlProductCount,
+      imageUrlSkipCount,
+      imageUrlWarningCount,
     };
     saveImportStateToStorage(state);
     setSavedState(state);
@@ -2836,6 +3025,16 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
         detectedWeekLabels: [],
       });
     }
+    // Restore image URL state
+    if (savedState.imageUrlFilename) {
+      setImageUrlFilename(savedState.imageUrlFilename);
+      setImageUrlImportedAt(savedState.imageUrlImportedAt ?? '');
+      setImageUrlMap(savedState.imageUrlMapData ?? EMPTY_IMAGE_URL_MAP);
+      setImageUrlSkuCount(savedState.imageUrlSkuCount ?? 0);
+      setImageUrlProductCount(savedState.imageUrlProductCount ?? 0);
+      setImageUrlSkipCount(savedState.imageUrlSkipCount ?? 0);
+      setImageUrlWarningCount(savedState.imageUrlWarningCount ?? 0);
+    }
     setStep('review');
   };
 
@@ -2894,8 +3093,9 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
 
   const handleSendToProducts = useCallback(() => {
     if (!onSendToProducts) return;
-    const products = reviewRowsToMdProducts(reviewRows, colMap, releaseDateMap, supplementAlerts);
-    const variations = reviewRowsToMdVariations(reviewRows, colMap, releaseDateMap, supplementAlerts);
+    const imgMap = imageUrlFilename ? imageUrlMap : undefined;
+    const products  = reviewRowsToMdProducts(reviewRows, colMap, releaseDateMap, supplementAlerts, imgMap);
+    const variations = reviewRowsToMdVariations(reviewRows, colMap, releaseDateMap, supplementAlerts, imgMap);
     onSendToProducts(products, variations);
     setSentCount(products.length);
     // Update history status to '商品一覧反映済み'
@@ -2905,7 +3105,7 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
       saveImportHistoryToStorage(updated);
       return updated;
     });
-  }, [onSendToProducts, reviewRows, colMap, releaseDateMap, supplementAlerts]);
+  }, [onSendToProducts, reviewRows, colMap, releaseDateMap, supplementAlerts, imageUrlMap, imageUrlFilename]);
 
   // Phase 1: DB保存ロジックはここに実装予定（git履歴 commit fb4824d 参照）
 
@@ -2992,16 +3192,23 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
             materialFilename={materialFilename}
             mdFilename={mdFilename}
             swatchFilename={swatchFilename}
+            imageUrlFilename={imageUrlFilename}
+            imageUrlSkuCount={imageUrlSkuCount}
+            imageUrlProductCount={imageUrlProductCount}
+            imageUrlSkipCount={imageUrlSkipCount}
+            imageUrlWarningCount={imageUrlWarningCount}
             captionLoading={captionLoading}
             specLoading={specLoading}
             materialLoading={materialLoading}
             mdLoading={mdLoading}
             swatchLoading={swatchLoading}
+            imageUrlLoading={imageUrlLoading}
             onCaptionFile={handleCaptionFile}
             onSpecFile={handleSpecFile}
             onMaterialFile={handleMaterialFile}
             onMdFile={handleMdFile}
             onSwatchFile={handleSwatchFile}
+            onImageUrlFile={handleImageUrlFile}
             onGoToColumns={() => setStep('columns')}
           />
           <SupplementStatusCard alerts={supplementAlerts} />

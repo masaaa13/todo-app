@@ -156,7 +156,7 @@ radial 参考: 消化週数 < 販売可能週数 − n → 売れ筋、消化週
 
 **目的:** 商品一覧 / 欲しいものリストで商品画像サムネイルを表示できる土台を作る
 
-**実装済み:**
+**実装済み（Phase 3.7.0 — 土台）:**
 
 - `MdProduct` / `MdVariation` / `WishlistItem` に `imageUrl?: string` を追加
 - 商品一覧 商品別: 「画像」列を追加（`defaultVisible: false`、`defaultWidth: 90`）
@@ -167,22 +167,30 @@ radial 参考: 消化週数 < 販売可能週数 − n → 売れ筋、消化週
 - 画像読み込みエラー時もプレースホルダーに切り替え
 - 表示項目設定で画像列のON/OFF、列順変更、列幅変更が可能
 - `localStorage` に保存、旧設定には末尾に追加
-- `ImportTab` から生成する `MdProduct` / `MdVariation` に `imageUrl: undefined` を設定
+
+**実装済み（Phase 3.7.1 — 画像URL CSV取込）:**
+
+- 商品登録CSVタブの確認・保存画面「ファイル取込」欄に「画像URL」スロットを追加（MD表の次）
+- 対応フォーマット: CSV / xlsx / xls
+- 対応列名: 品番（品番/商品番号/productNo 等）、SKU（SKU/sku/skuCode 等）、画像URL（画像URL/imageUrl/image 等）
+- SKU単位 → 品番単位の優先順で紐づけ
+- SKU正規化: `1266302_78_9` / `1266302789` 両表記に対応
+- 不正URLはスキップして警告カウント
+- 取込結果を「SKU N件 / 品番 N件 / スキップ N件」形式で表示
+- `ecTodo.importState` に imageUrlMap・ファイル名・件数等を保存
+- リロード・取込状態復元時に画像URL状態も復元
+- 「商品一覧へ反映」時に imageUrlMap を MdProduct / MdVariation に適用
+  - MdVariation: SKU単位 → 品番単位の優先
+  - MdProduct: 品番単位 → 同品番最初のSKU画像の優先
+  - WishlistItem: MdVariation.imageUrl を引き継ぐ
 - CSV出力には画像URL列を追加しない（既存仕様維持）
-
-**今回は実装しないこと:**
-
-- 商品画像ファイルアップロード
-- 画像URL CSVの専用取込
-- FutureShop APIからの画像取得
-- SKU別画像の本格対応
 
 **次フェーズ予定:**
 
-- 商品画像URL CSV取込（品番→URL マッピング）
-- FutureShop API連携での画像URL取得
-- SKU別画像対応（バリエーション別）
-- 画像URLのインポート画面への組み込み
+- FutureShop API連携での画像URL自動取得
+- SKU別画像の精度向上（バリエーション別）
+- 画像URL CSVダウンロード（インポート済み内容の確認用）
+- 商品一覧反映後に画像URLを追加取込した場合の即時更新
 
 ---
 
