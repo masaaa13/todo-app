@@ -19,6 +19,12 @@ import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
 import type { SortType } from './types/sort';
 import type { MdProduct, MdVariation } from './types/md';
+
+export type StockSyncStatus =
+  | { state: 'idle' }
+  | { state: 'syncing' }
+  | { state: 'success'; skuCount: number; productCount: number }
+  | { state: 'error'; message: string };
 import styles from './App.module.css';
 
 const MD_PRODUCTS_KEY   = 'ecTodo.mdProducts';
@@ -67,6 +73,7 @@ function App() {
   const [mdProducts, setMdProducts] = useState<MdProduct[]>([]);
   const [mdProductsSavedAt, setMdProductsSavedAt] = useState<string | null>(null);
   const [mdVariations, setMdVariations] = useState<MdVariation[]>([]);
+  const [syncStatus, setSyncStatus] = useState<StockSyncStatus>({ state: 'idle' });
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
@@ -91,7 +98,70 @@ function App() {
     setMdProducts([]);
     setMdProductsSavedAt(null);
     setMdVariations([]);
+    setSyncStatus({ state: 'idle' });
   }, []);
+
+  const syncStocks = useCallback(async () => {
+    if (mdVariations.length === 0) return;
+    setSyncStatus({ state: 'syncing' });
+
+    const productNos = Array.from(new Set(mdVariations.map((v) => v.productNo)));
+    const CHUNK_SIZE = 100;
+    const allStock: Record<string, number> = {};
+
+    try {
+      for (let i = 0; i < productNos.length; i += CHUNK_SIZE) {
+        const chunk = productNos.slice(i, i + CHUNK_SIZE);
+        if (i > 0) await new Promise<void>((r) => setTimeout(r, 1100));
+
+        const res = await fetch('/api/check-stock', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ productNos: chunk }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json() as { ok?: boolean; stock?: Record<string, number> };
+        if (!data.ok) throw new Error('API returned ok=false');
+        Object.assign(allStock, data.stock ?? {});
+      }
+
+      const updatedVariations = mdVariations.map((v) => {
+        const normalSku = v.skuCode.replaceAll('_', '');
+        if (!Object.prototype.hasOwnProperty.call(allStock, normalSku)) return v;
+        const stock = allStock[normalSku];
+        return { ...v, actualStock: stock, availableStock: stock, stockType: 'actual' as const };
+      });
+
+      const stockByProduct: Record<string, number> = {};
+      for (const v of updatedVariations) {
+        if (v.actualStock != null) {
+          stockByProduct[v.productNo] = (stockByProduct[v.productNo] ?? 0) + v.actualStock;
+        }
+      }
+
+      const updatedProducts = mdProducts.map((p) => {
+        if (!Object.prototype.hasOwnProperty.call(stockByProduct, p.productNo)) return p;
+        const stock = stockByProduct[p.productNo];
+        return { ...p, actualStock: stock, availableStock: stock, stockType: 'actual' as const };
+      });
+
+      const now = new Date().toISOString();
+      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
+      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+
+      setMdVariations(updatedVariations);
+      setMdProducts(updatedProducts);
+      setSyncStatus({
+        state:        'success',
+        skuCount:     Object.keys(allStock).length,
+        productCount: Object.keys(stockByProduct).length,
+      });
+    } catch (err) {
+      setSyncStatus({ state: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }, [mdVariations, mdProducts, mdProductsSavedAt]);
 
   const activeCount = tasks.filter((t) => !t.completed).length;
   const doneCount = tasks.filter((t) => t.completed).length;
@@ -158,6 +228,8 @@ function App() {
               variations={mdVariations}
               savedAt={mdProductsSavedAt}
               onClearProducts={clearMdProductsStorage}
+              onSyncStocks={syncStocks}
+              syncStatus={syncStatus}
             />
           )}
 

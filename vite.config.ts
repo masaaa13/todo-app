@@ -1,7 +1,90 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
-// https://vite.dev/config/
+function loadDotEnvLocal(): Record<string, string> {
+  const envPath = path.resolve(process.cwd(), '.env.local');
+  if (!fs.existsSync(envPath)) return {};
+  const result: Record<string, string> = {};
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq === -1) continue;
+    result[t.slice(0, eq).trim()] = t.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  return result;
+}
+
 export default defineConfig({
-  plugins: [react()],
-})
+  plugins: [
+    react(),
+    {
+      name: 'dev-api-check-stock',
+      configureServer(server) {
+        const env = loadDotEnvLocal();
+        const proxyBase  = env.FS_PROXY_BASE_URL  ?? process.env.FS_PROXY_BASE_URL;
+        const proxyToken = env.FS_PROXY_TOKEN ?? process.env.FS_PROXY_TOKEN;
+
+        server.middlewares.use('/api/check-stock', (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+            return;
+          }
+
+          if (!proxyBase || !proxyToken) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Proxy not configured' }));
+            return;
+          }
+
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          req.on('end', () => {
+            void (async () => {
+              try {
+                const parsed = JSON.parse(body) as { productNos?: unknown };
+                const productNos = parsed.productNos;
+
+                if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 100) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Invalid productNos' }));
+                  return;
+                }
+
+                if (!productNos.every((n) => /^\d{7}$/.test(String(n)))) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'productNos must be 7-digit numbers' }));
+                  return;
+                }
+
+                const upstream = await fetch(`${proxyBase}/check-stock`, {
+                  method:  'POST',
+                  headers: {
+                    'Authorization': `Bearer ${proxyToken}`,
+                    'Content-Type':  'application/json',
+                  },
+                  body: JSON.stringify({ productNos }),
+                });
+
+                const data = await upstream.json() as Record<string, unknown>;
+                res.writeHead(upstream.ok ? 200 : upstream.status, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  ok:        data.ok    ?? false,
+                  stock:     data.stock ?? {},
+                  fetchedAt: new Date().toISOString(),
+                }));
+              } catch {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal Server Error' }));
+              }
+            })();
+          });
+        });
+      },
+    },
+  ],
+});

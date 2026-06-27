@@ -102,6 +102,13 @@ export type WishlistItem = {
   suggestedAction: string;
   imageUrl?: string;
 
+  // 在庫
+  actualStock?: number | null;
+  availableStock?: number | null;
+  stockType?: 'actual' | 'preorder' | 'planned' | 'mixed' | 'unknown';
+  preorderStock?: number | null;
+  plannedStock?: number | null;
+
   // 効果測定
   wishlistAddedAt?: string;
   wishlistRequestedQty?: number | null;

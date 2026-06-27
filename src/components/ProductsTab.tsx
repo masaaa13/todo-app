@@ -2,6 +2,12 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { MdProduct, MdVariation } from '../types/md';
 import styles from './ProductsTab.module.css';
 
+type StockSyncStatus =
+  | { state: 'idle' }
+  | { state: 'syncing' }
+  | { state: 'success'; skuCount: number; productCount: number }
+  | { state: 'error'; message: string };
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'product' | 'variation';
@@ -205,11 +211,15 @@ type DashboardHeaderProps = {
   csvNote: string;
   onCsvDownload: () => void;
   csvDisabled: boolean;
+  onSyncStocks?: () => void;
+  syncStatus?: StockSyncStatus;
+  hasVariations: boolean;
 };
 
 function DashboardHeader({
   isReal, savedAt, onClearProducts,
   csvLabel, csvNote, onCsvDownload, csvDisabled,
+  onSyncStocks, syncStatus, hasVariations,
 }: DashboardHeaderProps) {
   const badgeVariant = !isReal ? 'sample' : savedAt ? 'saved' : 'temp';
   const badgeText = !isReal ? 'サンプル表示中' : savedAt ? '保存済みデータ表示中' : '一時反映データ表示中';
@@ -219,6 +229,19 @@ function DashboardHeader({
       onClearProducts();
     }
   };
+
+  const syncLabel = (() => {
+    if (!syncStatus || syncStatus.state === 'idle') return '在庫同期';
+    if (syncStatus.state === 'syncing') return '同期中...';
+    if (syncStatus.state === 'success') return `✓ ${syncStatus.skuCount}SKU 同期済み`;
+    return `同期エラー: ${syncStatus.message.slice(0, 20)}`;
+  })();
+  const syncVariant = (() => {
+    if (!syncStatus || syncStatus.state === 'idle') return 'idle';
+    if (syncStatus.state === 'syncing') return 'syncing';
+    if (syncStatus.state === 'success') return 'success';
+    return 'error';
+  })();
 
   return (
     <div className={styles.dashboardHeader}>
@@ -249,6 +272,17 @@ function DashboardHeader({
             <span className={styles.csvBtnNote}>{csvNote}</span>
           )}
         </div>
+        {onSyncStocks && (
+          <button
+            className={styles.syncBtn}
+            data-variant={syncVariant}
+            onClick={onSyncStocks}
+            disabled={!hasVariations || syncStatus?.state === 'syncing'}
+            title={!hasVariations ? 'バリエーションデータがありません' : '在庫をFutureShopから取得します'}
+          >
+            {syncLabel}
+          </button>
+        )}
         {isReal && (
           <button className={styles.clearBtn} onClick={handleClear}>
             保存データをクリア
@@ -1054,6 +1088,8 @@ type ProductsTabProps = {
   variations?: MdVariation[];
   savedAt?: string | null;
   onClearProducts?: () => void;
+  onSyncStocks?: () => void;
+  syncStatus?: StockSyncStatus;
 };
 
 export function ProductsTab({
@@ -1061,6 +1097,8 @@ export function ProductsTab({
   variations = [],
   savedAt = null,
   onClearProducts,
+  onSyncStocks,
+  syncStatus,
 }: ProductsTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('product');
   const [keyword, setKeyword] = useState('');
@@ -1179,6 +1217,9 @@ export function ProductsTab({
             : () => downloadMdVariationsCsv(filteredVariations)
         }
         csvDisabled={viewMode === 'product' ? !isReal : !hasVariations}
+        onSyncStocks={onSyncStocks}
+        syncStatus={syncStatus}
+        hasVariations={hasVariations}
       />
 
       <div className={styles.viewControlRow}>

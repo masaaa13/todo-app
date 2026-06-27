@@ -310,16 +310,63 @@ npm run fs:stock:check -- --sku 1266302789
 
 **今回実装しないこと:**
 
-- MDツール画面への在庫同期ボタン追加
-- localStorage への在庫保存
+- ~~MDツール画面への在庫同期ボタン追加~~ → Phase 4.6 で実装済み
 - 複数SKU一括取得・在庫更新API・受注API連携
 
 **次フェーズ予定:**
 
-- `FS_PROXY_BASE_URL` / `FS_PROXY_TOKEN` を `.env.local` に設定し実動作を検証
-- MdVariation への actualStock / availableStock 反映ボタンの実装
 - 予約在庫・予定在庫の取得ルート確認（別エンドポイントの可能性あり）
 - goodsUrlCode / JANコードが必要な場合は別ルート（FutureShop 商品検索API）を検討
+
+---
+
+## Phase 4.6: SKU別在庫同期ボタン（実装済み）
+
+**概要:**
+
+商品一覧タブに「在庫同期」ボタンを追加し、FutureShop ConoHa VPS 中継APIから  
+SKU別在庫を取得して MdVariation / MdProduct に反映する。
+
+**実装内容:**
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `api/check-stock.ts` | Vercel serverless function。`FS_PROXY_TOKEN` はサーバー側でのみ保持、ブラウザに漏れない |
+| `vite.config.ts` | dev server 用ミドルウェア。`.env.local` を読み込み `/api/check-stock` をローカルでも動作させる |
+| `src/types/md.ts` | `WishlistItem` に `actualStock / availableStock / stockType / preorderStock / plannedStock` 追加 |
+| `src/App.tsx` | `syncStocks()` コールバックと `syncStatus` state を追加。ProductsTab に渡す |
+| `src/components/ProductsTab.tsx` | `DashboardHeader` に「在庫同期」ボタン追加。syncStatus でテキスト/スタイル切り替え |
+| `src/components/WishlistTab.tsx` | `toWishlistItems()` に在庫フィールドを追加 |
+
+**処理フロー:**
+
+```
+ボタンクリック
+  → mdVariations から productNo を収集（重複排除）
+  → 100件ずつ chunk に分割
+  → POST /api/check-stock（1100ms インターバル）
+  → Vercel function / dev middleware → ConoHa VPS /check-stock
+  → stockMap { skuCode: qty } を取得
+  → MdVariation: skuCode.replaceAll('_', '') でマッチ
+    actualStock = qty, availableStock = qty, stockType = 'actual'
+  → MdProduct: productNo ごとに actualStock を集計
+  → localStorage 保存 → state 更新 → 再レンダー
+```
+
+**同期ステータス:**
+
+| 状態 | ボタン表示 |
+|------|------------|
+| idle | `在庫同期` |
+| syncing | `同期中...` (disabled) |
+| success | `✓ {N}SKU 同期済み` |
+| error | `同期エラー: {message}` |
+
+**セキュリティ:**
+
+- `FS_PROXY_TOKEN` は `api/check-stock.ts` と `vite.config.ts` のサーバー側のみで使用
+- ブラウザには一切送信されない
+- `.env.local` は git add 禁止（`.gitignore` で管理）
 
 ---
 

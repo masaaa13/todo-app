@@ -132,6 +132,26 @@
 
 .clearBtn:hover { background: #ffe4e6; }
 
+/* Sync button */
+.syncBtn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1.5px solid #6ee7b7;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.syncBtn:hover:not(:disabled) { background: #d1fae5; }
+.syncBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.syncBtn[data-variant="syncing"] { color: #6b7280; background: #f3f4f6; border-color: #d1d5db; }
+.syncBtn[data-variant="success"] { color: #065f46; background: #d1fae5; border-color: #34d399; }
+.syncBtn[data-variant="error"]   { color: #b91c1c; background: #fff1f2; border-color: #fca5a5; }
+
 /* ── View control row (toggle + column selector) ─────────────────────────── */
 
 .viewControlRow {
