@@ -370,6 +370,88 @@ SKU別在庫を取得して MdVariation / MdProduct に反映する。
 
 ---
 
+## Phase 4.7: 受注API検証 / SKU別売上集計（検証中）
+
+**目的:**
+
+FutureShop 受注検索API / 受注取得API、または既存 ConoHa VPS 中継API 経由で  
+受注データを取得し、SKU別の販売数・売上金額を MDツールに反映できるか検証する。
+
+**方針:**
+
+- 個人情報（氏名・住所・電話・メール・会員ID・決済情報）は保存・出力しない
+- まず直近3日程度で検証し、本番APIへの大量アクセスを避ける
+- キャンセル・返品を除外した正味販売数・売上を集計する
+- 問題なければ次フェーズで売上同期ボタンを追加する
+
+**検証スクリプト:**
+
+```bash
+npm run fs:orders:check -- --days 3
+npm run fs:orders:check -- --from 2026-06-25 --to 2026-06-27
+npm run fs:orders:check -- --days 7 --product 1266302
+```
+
+**エンドポイント候補（未確定）:**
+
+| 候補 | 試行結果 |
+|------|----------|
+| `POST /search-orders` | 要確認 |
+| `POST /orders` | 要確認 |
+| `POST /get-orders` | 要確認 |
+| `POST /check-orders` | 要確認 |
+
+使用環境変数（既存と同じ予定）:
+- `FS_PROXY_BASE_URL`
+- `FS_PROXY_TOKEN`
+
+受注APIで別エンドポイント・別tokenが必要な場合:
+- `FS_ORDERS_ENDPOINT`（URLを個別指定する場合）
+- `FS_ORDERS_TOKEN`（別tokenが必要な場合）
+
+**取得・集計したいフィールド:**
+
+| フィールド | 確認項目 |
+|---|---|
+| 受注日 | `orderDate` / `orderedAt` |
+| 受注ステータス | キャンセル除外に使用 |
+| SKUコード | `skuCode` / `goodsVariationCode` 等 |
+| 品番 | `productNo` / `goodsNo` 等 |
+| 数量 | `quantity` / `qty` 等 |
+| 単価 | `unitPrice` / `price` 等 |
+| 小計 | `lineAmount` / `subtotal` 等 |
+| 値引き | `discountAmount` 等 |
+
+**MDVariation への反映予定フィールド:**
+
+- `salesQty7d` / `salesQty14d` / `salesQty30d`
+- `salesAmount7d` / `salesAmount14d` / `salesAmount30d`
+- `monthlySalesQty` / `monthlySalesAmount`
+
+**集計ルール:**
+
+- SKUコードは `replaceAll('_','')` で10桁に正規化
+- productNo = SKU先頭7桁 / colorBranchNo = 8〜9桁 / sizeBranchNo = 10桁目
+- キャンセル受注はステータスで除外
+- 売上金額 = lineAmount（なければ unitPrice × qty）- discount
+- 送料・手数料は商品別売上に含めない
+
+**保存先（git管理外）:**
+
+- `tmp/futureshop-orders-response.sample.json` — マスク済みフルレスポンス
+- `tmp/futureshop-orders-response.summary.json` — MDツール反映用サマリー
+
+**今回実装しないこと:**
+
+- MDツール画面への売上同期ボタン追加
+- MdVariation への salesQty7d 等の反映
+- localStorage への売上保存
+- 書き込み系API（発送・入金・ステータス変更）
+- 顧客データ保存
+- Vercel 反映
+
+---
+
 ## Phase 5: 欲しいものリスト高度化
 
 - 店舗側へ共有する補充リスト自動生成（バリエーション別を基本単位とする）

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "fs:stock:check": "node scripts/futureshop/check-stock-api.mjs"
+    "fs:stock:check": "node scripts/futureshop/check-stock-api.mjs",
+    "fs:orders:check": "node scripts/futureshop/check-orders-api.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
