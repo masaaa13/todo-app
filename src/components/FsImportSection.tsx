@@ -4,7 +4,9 @@ import styles from './FsImportSection.module.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_TYPES = ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
+const DEFAULT_TYPES  = ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
+const MAX_PAGES      = 5;
+const MAX_PRODUCTS   = 250;
 
 // ── VPS response types ────────────────────────────────────────────────────────
 
@@ -41,6 +43,14 @@ type VpsResponse = {
   nextUrl?: string;
   warning?: string;
 };
+
+function extractCursor(nextUrl: string): string | null {
+  try {
+    return new URL(nextUrl).searchParams.get('cursor');
+  } catch {
+    return null;
+  }
+}
 
 // ── Mode / search form types ──────────────────────────────────────────────────
 
@@ -237,7 +247,10 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const [fetchedProducts, setFetchedProducts] = useState<VpsProduct[]>([]);
   const [failedNos, setFailedNos] = useState<string[]>([]);
   const [selectedNos, setSelectedNos] = useState<Set<string>>(new Set());
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore]         = useState(false);
+  const [nextCursor, setNextCursor]   = useState<string | null>(null);
+  const [pageCount, setPageCount]     = useState(0);
+  const [noMorePages, setNoMorePages] = useState<'limit' | 'done' | null>(null);
 
   // Send state
   const [sendStatus, setSendStatus] = useState<'idle' | 'syncing' | 'sync-error'>('idle');
@@ -264,6 +277,9 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setFailedNos([]);
     setSelectedNos(new Set());
     setHasMore(false);
+    setNextCursor(null);
+    setPageCount(0);
+    setNoMorePages(null);
     setSendStatus('idle');
     setSyncError('');
     setFetchError('');
@@ -327,6 +343,9 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setFailedNos([]);
     setSelectedNos(new Set());
     setHasMore(false);
+    setNextCursor(null);
+    setPageCount(0);
+    setNoMorePages(null);
     setSendStatus('idle');
     setSyncError('');
 
@@ -358,15 +377,89 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         products = products.filter((p) => p.visible === wantPublic);
       }
 
+      const cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
+      const canFetchMore = !!cursor && products.length < MAX_PRODUCTS;
       setFetchedProducts(products);
       setSelectedNos(new Set(products.map((p) => p.productNo)));
-      if (data.nextUrl) setHasMore(true);
+      setNextCursor(cursor);
+      setPageCount(1);
+      setHasMore(canFetchMore);
+      setNoMorePages(canFetchMore ? null : data.nextUrl ? 'limit' : null);
       setFetchStatus('idle');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error');
       setFetchStatus('error');
     }
   }, [searchForm, hasApiCondition, dateRangeError]);
+
+  // ── Fetch more (condition search paging) ───────────────────────────────────
+
+  const handleFetchMore = useCallback(async () => {
+    if (!nextCursor || !hasMore || fetchStatus === 'loading') return;
+
+    setFetchStatus('loading');
+    setFetchError('');
+
+    // 1秒待機（API制限への配慮）
+    await new Promise<void>((r) => setTimeout(r, 1000));
+
+    const body: Record<string, unknown> = {
+      types:  DEFAULT_TYPES,
+      count:  50,
+      cursor: nextCursor,
+    };
+    if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
+    if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
+    if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
+
+    try {
+      const res = await fetch('/api/check-products', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json() as VpsResponse;
+      if (!data.ok) throw new Error('VPS returned ok=false');
+
+      let newProducts = data.products ?? [];
+
+      // 初回と同じクライアントフィルタを適用
+      const prefix = searchForm.productNoPrefix.trim();
+      if (prefix) newProducts = newProducts.filter((p) => p.productNo.startsWith(prefix));
+      if (searchForm.visible !== 'all') {
+        const wantPublic = searchForm.visible === 'public';
+        newProducts = newProducts.filter((p) => p.visible === wantPublic);
+      }
+
+      // 既存との dedup マージ
+      const existingNos = new Set(fetchedProducts.map((p) => p.productNo));
+      const toAdd       = newProducts.filter((p) => !existingNos.has(p.productNo));
+      const combined    = [...fetchedProducts, ...toAdd];
+
+      const newPageCount   = pageCount + 1;
+      const cursor         = data.nextUrl ? extractCursor(data.nextUrl) : null;
+      const canFetchMore   = !!cursor && newPageCount < MAX_PAGES && combined.length < MAX_PRODUCTS;
+
+      setFetchedProducts(combined);
+      setSelectedNos((prev) => {
+        const next = new Set(prev);
+        for (const p of toAdd) next.add(p.productNo);
+        return next;
+      });
+      setNextCursor(cursor);
+      setPageCount(newPageCount);
+      setHasMore(canFetchMore);
+      setNoMorePages(canFetchMore ? null : cursor ? 'limit' : 'done');
+      setFetchStatus('idle');
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Unknown error');
+      setFetchStatus('error');
+    }
+  }, [nextCursor, hasMore, fetchStatus, fetchedProducts, pageCount, searchForm]);
 
   // ── Selection ──────────────────────────────────────────────────────────────
 
@@ -651,11 +744,6 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               </span>
             </>
           )}
-          {hasMore && (
-            <div className={styles.hasMoreWarning}>
-              さらに結果がある可能性があります。条件を絞ってください。
-            </div>
-          )}
         </div>
       )}
 
@@ -680,6 +768,34 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               />
             ))}
           </div>
+
+          {/* ── Pagination (condition search only) ── */}
+          {mode === 'search' && (hasMore || noMorePages !== null) && (
+            <div className={styles.paginationRow}>
+              {hasMore && (
+                <button
+                  type="button"
+                  className={styles.fetchMoreBtn}
+                  onClick={handleFetchMore}
+                  disabled={fetchStatus === 'loading'}
+                >
+                  {fetchStatus === 'loading'
+                    ? '取得中...'
+                    : `次の50件を取得（${pageCount + 1} / ${MAX_PAGES}ページ目）`}
+                </button>
+              )}
+              {noMorePages === 'limit' && (
+                <div className={styles.hasMoreWarning}>
+                  取得上限（{MAX_PAGES}ページ / {MAX_PRODUCTS}件）に達しました。条件を絞ってください。
+                </div>
+              )}
+              {noMorePages === 'done' && pageCount > 1 && (
+                <div className={styles.paginationDone}>
+                  全 {fetchedProducts.length}件を取得しました
+                </div>
+              )}
+            </div>
+          )}
 
           <div className={styles.sendRow}>
             <button
