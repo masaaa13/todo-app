@@ -92,6 +92,13 @@ function toWishlistItems(variations: MdVariation[]): WishlistItem[] {
       priority,
       suggestedAction,
       imageUrl: v.imageUrl,
+      wishlistAddedAt: v.wishlistAddedAt,
+      wishlistRequestedQty: v.wishlistRequestedQty,
+      wishlistStockBefore: v.wishlistStockBefore,
+      wishlistStockAfter: v.wishlistStockAfter,
+      wishlistSalesAfter7d: v.wishlistSalesAfter7d,
+      wishlistSalesAfter14d: v.wishlistSalesAfter14d,
+      wishlistEffect: v.wishlistEffect,
     };
   });
 }
@@ -343,20 +350,38 @@ function ColumnSelector({ configs, columns, onChange, onShowAll, onReset }: Colu
   );
 }
 
+// ── Display value helpers ─────────────────────────────────────────────────────
+
+function fmtNum(v: number | null | undefined): string {
+  return v != null ? String(v) : '準備中';
+}
+
+function fmtEffect(v: WishlistItem['wishlistEffect']): string {
+  return v ?? '未判定';
+}
+
 // ── Column definitions ────────────────────────────────────────────────────────
 
 const WISHLIST_COLUMNS: TableColumn<WishlistItem>[] = [
-  { key: 'priority',        label: '優先度',       defaultVisible: true, defaultWidth: 70,  render: (i) => <PriorityPill priority={i.priority} /> },
-  { key: 'productNo',       label: '品番',         defaultVisible: true, defaultWidth: 90,  render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
-  { key: 'productName',     label: '商品名',       defaultVisible: true, defaultWidth: 200, render: (i) => <span className={styles.productName}>{i.productName}</span> },
-  { key: 'skuCode',         label: 'SKU',          defaultVisible: true, defaultWidth: 120, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
-  { key: 'color',           label: 'カラー',       defaultVisible: true, defaultWidth: 120, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
-  { key: 'size',            label: 'サイズ',       defaultVisible: true, defaultWidth: 70,  render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
-  { key: 'category',        label: 'カテゴリ',     defaultVisible: true, defaultWidth: 110, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
-  { key: 'releaseDate',     label: '発売日',       defaultVisible: true, defaultWidth: 100, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
-  { key: 'reason',          label: '理由',         defaultVisible: true, defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
-  { key: 'suggestedAction', label: '推奨アクション', defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
-  { key: 'image',           label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (i) => <ProductThumbnail imageUrl={i.imageUrl} alt={i.productName} /> },
+  { key: 'priority',             label: '優先度',         defaultVisible: true,  defaultWidth: 70,  render: (i) => <PriorityPill priority={i.priority} /> },
+  { key: 'productNo',            label: '品番',           defaultVisible: true,  defaultWidth: 90,  render: (i) => <span className={styles.productNo}>{i.productNo}</span> },
+  { key: 'productName',          label: '商品名',         defaultVisible: true,  defaultWidth: 200, render: (i) => <span className={styles.productName}>{i.productName}</span> },
+  { key: 'skuCode',              label: 'SKU',            defaultVisible: true,  defaultWidth: 120, render: (i) => <span className={styles.skuBadge}>{i.skuCode.replaceAll('_', '')}</span> },
+  { key: 'color',                label: 'カラー',         defaultVisible: true,  defaultWidth: 120, render: (i) => <span className={styles.colorCell}>{i.color ?? '—'}</span> },
+  { key: 'size',                 label: 'サイズ',         defaultVisible: true,  defaultWidth: 70,  render: (i) => <span className={styles.sizeCell}>{i.size ?? '—'}</span> },
+  { key: 'category',             label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 110, render: (i) => <span className={styles.categoryBadge}>{i.category}</span> },
+  { key: 'releaseDate',          label: '発売日',         defaultVisible: true,  defaultWidth: 100, render: (i) => <span className={styles.dateCell}>{i.releaseDate ?? '—'}</span> },
+  { key: 'reason',               label: '理由',           defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.reasonCell}>{i.reason}</span> },
+  { key: 'suggestedAction',      label: '推奨アクション', defaultVisible: true,  defaultWidth: 180, render: (i) => <span className={styles.actionCell}>{i.suggestedAction}</span> },
+  { key: 'image',                label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (i) => <ProductThumbnail imageUrl={i.imageUrl} alt={i.productName} /> },
+  // 効果測定
+  { key: 'wishlistAddedAt',      label: '欲しいもの追加日',  defaultVisible: false, defaultWidth: 130, render: (i) => <span className={styles.dateCell}>{i.wishlistAddedAt ?? '準備中'}</span> },
+  { key: 'wishlistRequestedQty', label: '追加希望数',       defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistRequestedQty)}</span> },
+  { key: 'wishlistStockBefore',  label: '追加前在庫',       defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistStockBefore)}</span> },
+  { key: 'wishlistStockAfter',   label: '追加後在庫',       defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistStockAfter)}</span> },
+  { key: 'wishlistSalesAfter7d', label: '追加後7日販売数',  defaultVisible: false, defaultWidth: 120, render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistSalesAfter7d)}</span> },
+  { key: 'wishlistSalesAfter14d',label: '追加後14日販売数', defaultVisible: false, defaultWidth: 120, render: (i) => <span className={styles.numCell}>{fmtNum(i.wishlistSalesAfter14d)}</span> },
+  { key: 'wishlistEffect',       label: '効果判定',         defaultVisible: false, defaultWidth: 90,  render: (i) => <span className={styles.effectCell} data-effect={i.wishlistEffect ?? 'none'}>{fmtEffect(i.wishlistEffect)}</span> },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────

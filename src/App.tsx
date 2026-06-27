@@ -9,6 +9,7 @@ import { FilterTabs } from './components/FilterTabs';
 import { SearchBar } from './components/SearchBar';
 import { ProductsTab } from './components/ProductsTab';
 import { WishlistTab } from './components/WishlistTab';
+import { BudgetTab } from './components/BudgetTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
 import { ImportTab } from './components/ImportTab';
@@ -50,6 +51,7 @@ function loadMdVariationsFromStorage(): { variations: MdVariation[]; savedAt: st
 const NAV_ITEMS: { tab: AppTab; icon: string; label: string }[] = [
   { tab: 'products',  icon: '📦', label: '商品一覧' },
   { tab: 'wishlist',  icon: '📋', label: '欲しいものリスト' },
+  { tab: 'budget',    icon: '💰', label: '予算管理' },
   { tab: 'import',    icon: '⬇',  label: '商品登録CSV' },
   { tab: 'inventory', icon: '📊', label: '在庫候補' },
   { tab: 'schedules', icon: '🗓', label: 'スケジュール' },
@@ -164,9 +166,15 @@ function App() {
             <WishlistTab products={mdProducts} variations={mdVariations} />
           )}
 
+          {/* Budget: standard width */}
+          {activeTab === 'budget' && (
+            <div className={styles.standardWrap}>
+              <BudgetTab />
+            </div>
+          )}
 
           {/* All other tabs: centered standard width */}
-          {activeTab !== 'products' && activeTab !== 'wishlist' && (
+          {activeTab !== 'products' && activeTab !== 'wishlist' && activeTab !== 'budget' && (
             <div className={styles.standardWrap}>
 
               {/* Tasks */}

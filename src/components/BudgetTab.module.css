@@ -1,0 +1,312 @@
+/* ── Root ────────────────────────────────────────────────────────────────── */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 18px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  font-size: 0.78rem;
+  color: var(--color-text-sub);
+  font-weight: 500;
+}
+
+.desc {
+  font-size: 0.79rem;
+  color: var(--color-text-sub);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.headerRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.targetBadge {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #7c3aed;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.statusBadge {
+  font-size: 0.72rem;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+/* ── KPI Grid ────────────────────────────────────────────────────────────── */
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.kpiCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpiCard[data-variant='ok'] {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.kpiCard[data-variant='warn'] {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.kpiCard[data-variant='disabled'] {
+  opacity: 0.65;
+}
+
+.kpiLabel {
+  font-size: 0.71rem;
+  color: var(--color-text-sub);
+  font-weight: 500;
+}
+
+.kpiValue {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.02em;
+}
+
+.kpiCard[data-variant='ok'] .kpiValue {
+  color: #059669;
+}
+
+.kpiSub {
+  font-size: 0.67rem;
+  color: var(--color-text-sub);
+}
+
+/* ── Section ─────────────────────────────────────────────────────────────── */
+
+.section {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sectionTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text);
+  padding: 10px 16px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sectionBody {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionNote {
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+  margin: 0;
+}
+
+/* ── Breakdown ───────────────────────────────────────────────────────────── */
+
+.breakdownList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.breakdownRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-bg);
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+}
+
+.breakdownLabel {
+  font-size: 0.78rem;
+  color: var(--color-text);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.breakdownBadge {
+  font-size: 0.67rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.breakdownBadge[class*='normal'],
+.breakdownRow:has(.breakdownBadge) .breakdownBadge[class*='normal'] {
+  background: #f3f4f6; color: #374151;
+}
+
+/* Use data attribute approach for badge styling */
+.breakdownBadge { background: #f3f4f6; color: #374151; }
+
+.breakdownValue {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* ── Prepare box ─────────────────────────────────────────────────────────── */
+
+.prepareBox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.prepareIcon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.prepareText {
+  font-size: 0.76rem;
+  color: var(--color-text-sub);
+  line-height: 1.5;
+}
+
+/* ── API list ────────────────────────────────────────────────────────────── */
+
+.apiList {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+@media (max-width: 700px) {
+  .apiList {
+    grid-template-columns: 1fr;
+  }
+}
+
+.apiItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.apiDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.apiItem[data-status='planned'] .apiDot {
+  background: #6366f1;
+}
+
+.apiItem[data-status='later'] .apiDot {
+  background: #d1d5db;
+}
+
+.apiLabel {
+  font-size: 0.76rem;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 0;
+}
+
+.apiStatus {
+  font-size: 0.67rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.apiItem[data-status='planned'] .apiStatus {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.apiItem[data-status='later'] .apiStatus {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
