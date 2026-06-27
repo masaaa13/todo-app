@@ -20,7 +20,7 @@ type VpsProduct = {
   url: string;
   uri: string;
   name: string;
-  unitPrice: number;
+  unitPrice: number | string;
   visible: boolean;
   imageUrl: string;
   imageList: Record<string, string>[];
@@ -90,6 +90,11 @@ function loadExisting(): { products: MdProduct[]; variations: MdVariation[]; sav
 
 // ── Conversion ────────────────────────────────────────────────────────────────
 
+function unitPriceNum(p: VpsProduct): number | null {
+  const n = Number(p.unitPrice);
+  return isNaN(n) ? null : n;
+}
+
 function toMdProduct(p: VpsProduct): MdProduct {
   return {
     productNo:       p.productNo,
@@ -99,7 +104,7 @@ function toMdProduct(p: VpsProduct): MdProduct {
     nextAction:      '商品確認',
     skuCount:        p.variations.length,
     imageUrl:        p.imageUrl || undefined,
-    price:           p.unitPrice,
+    price:           unitPriceNum(p),
     productUrl:      p.uri,
     productUrlCode:  p.url,
     visible:         p.visible,
@@ -110,6 +115,7 @@ function toMdProduct(p: VpsProduct): MdProduct {
 
 function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
   const stock = v.stockCount ?? null;
+  const varPrice = v.price != null ? Number(v.price) : unitPriceNum(p);
   return {
     productNo:      p.productNo,
     productName:    p.name,
@@ -125,7 +131,7 @@ function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
     sizeBranchNo:   v.sizeBranchNo  || undefined,
     sizeName:       v.sizeName      || undefined,
     janCode:        v.janCode       || undefined,
-    price:          (v.price != null ? v.price : p.unitPrice) ?? null,
+    price:          isNaN(varPrice ?? NaN) ? null : varPrice,
     stockType:      'actual',
     actualStock:    stock,
     availableStock: stock,
@@ -325,7 +331,7 @@ function ProductPreviewCard({ product: p }: { product: VpsProduct }) {
         <div className={styles.previewProductNo}>{p.productNo}</div>
         <div className={styles.previewName}>{p.name}</div>
         <div className={styles.previewMeta}>
-          <span>{p.unitPrice.toLocaleString()}円</span>
+          <span>{Number(p.unitPrice).toLocaleString()}円</span>
           <span className={styles.metaDivider}>·</span>
           <span className={styles.metaVisible} data-visible={p.visible || undefined}>
             {p.visible ? '公開中' : '非公開'}

@@ -22,7 +22,7 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: 'dev-api-check-stock',
+      name: 'dev-api-proxy',
       configureServer(server) {
         const env = loadDotEnvLocal();
         const proxyBase  = env.FS_PROXY_BASE_URL  ?? process.env.FS_PROXY_BASE_URL;
@@ -77,6 +77,62 @@ export default defineConfig({
                   stock:     data.stock ?? {},
                   fetchedAt: new Date().toISOString(),
                 }));
+              } catch {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal Server Error' }));
+              }
+            })();
+          });
+        });
+
+        server.middlewares.use('/api/check-products', (req: IncomingMessage, res: ServerResponse) => {
+          if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+            return;
+          }
+
+          if (!proxyBase || !proxyToken) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Proxy not configured' }));
+            return;
+          }
+
+          let body = '';
+          req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          req.on('end', () => {
+            void (async () => {
+              try {
+                const parsed = JSON.parse(body) as { productNos?: unknown; types?: unknown };
+                const productNos = parsed.productNos;
+                const types = Array.isArray(parsed.types) && parsed.types.length > 0
+                  ? parsed.types
+                  : ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
+
+                if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 50) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Invalid productNos' }));
+                  return;
+                }
+
+                if (!productNos.every((n) => /^\d{7}$/.test(String(n)))) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'productNos must be 7-digit numbers' }));
+                  return;
+                }
+
+                const upstream = await fetch(`${proxyBase}/check-products`, {
+                  method:  'POST',
+                  headers: {
+                    'Authorization': `Bearer ${proxyToken}`,
+                    'Content-Type':  'application/json',
+                  },
+                  body: JSON.stringify({ productNos, types }),
+                });
+
+                const data = await upstream.json() as Record<string, unknown>;
+                res.writeHead(upstream.ok ? 200 : 502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(data));
               } catch {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: 'Internal Server Error' }));
