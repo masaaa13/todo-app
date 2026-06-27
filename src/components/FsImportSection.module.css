@@ -73,6 +73,75 @@
   color: var(--color-text-sub);
 }
 
+/* ── Parsed input meta ── */
+.parsedMeta {
+  font-size: 0.72rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 0;
+  line-height: 1.6;
+}
+
+.parsedHint { color: var(--color-text-sub); }
+
+.parsedValid {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.parsedNosList {
+  font-weight: 400;
+  font-family: 'SFMono-Regular', 'Menlo', monospace;
+  color: var(--color-text-sub);
+}
+
+.parsedDup {
+  color: #b45309;
+}
+
+.parsedInvalid {
+  color: var(--color-danger);
+}
+
+/* ── Fetch summary ── */
+.fetchSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.summarySuccess {
+  font-weight: 700;
+  color: var(--color-success);
+}
+
+.summaryFail {
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.summaryDot {
+  color: var(--color-border);
+  margin: 0 2px;
+}
+
+/* ── Sync error message ── */
+.syncErrorMsg {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
 /* ── Buttons ── */
 .btnRow {
   display: flex;

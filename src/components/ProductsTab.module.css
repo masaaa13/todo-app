@@ -557,6 +557,14 @@
   text-align: right;
 }
 
+.productUrlLink {
+  font-size: 0.76rem;
+  color: var(--color-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.productUrlLink:hover { text-decoration: underline; }
+
 .naCell {
   font-size: 0.72rem;
   color: var(--color-text-sub);

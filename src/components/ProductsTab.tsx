@@ -94,7 +94,7 @@ function csvEscape(v: string): string {
 }
 
 function downloadMdProductsCsv(products: MdProduct[]): void {
-  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション';
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL';
   const rows = products.map((p) => {
     const cols = [
       p.productNo,
@@ -107,6 +107,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
       p.sellThroughRate != null ? String(p.sellThroughRate) : '準備中',
       p.status,
       p.nextAction,
+      p.productUrl ?? '',
     ];
     return cols.map(csvEscape).join(',');
   });
@@ -122,7 +123,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
 }
 
 function downloadMdVariationsCsv(variations: MdVariation[]): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション';
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL';
   const rows = variations.map((v) => {
     const cols = [
       v.productNo,
@@ -137,6 +138,7 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
       v.sellThroughRate != null ? String(v.sellThroughRate) : '準備中',
       v.status,
       v.nextAction,
+      v.productUrl ?? '',
     ];
     return cols.map(csvEscape).join(',');
   });
@@ -718,6 +720,7 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   { key: 'isCollaboration',   label: 'コラボ',         defaultVisible: false, defaultWidth: 80,  render: (p) => <span className={styles.naCell}>{fmtBool(p.isCollaboration)}</span> },
   { key: 'isSaleTarget',      label: 'セール対象',     defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.naCell}>{fmtBool(p.isSaleTarget)}</span> },
   { key: 'isTimeSaleTarget',  label: 'タイムセール対象', defaultVisible: false, defaultWidth: 120, render: (p) => <span className={styles.naCell}>{fmtBool(p.isTimeSaleTarget)}</span> },
+  { key: 'productUrl',        label: '商品URL',        defaultVisible: false, defaultWidth: 100, render: (p) => p.productUrl ? <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className={styles.productUrlLink}>商品ページ</a> : <span className={styles.naCell}>—</span> },
 ];
 
 const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
@@ -754,6 +757,7 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'salesType',         label: '販売区分',       defaultVisible: false, defaultWidth: 110, render: (v) => <span className={styles.naCell}>{fmtSalesType(v.salesType)}</span> },
   { key: 'isSaleTarget',      label: 'セール対象',     defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.naCell}>{fmtBool(v.isSaleTarget)}</span> },
   { key: 'isTimeSaleTarget',  label: 'タイムセール対象', defaultVisible: false, defaultWidth: 120, render: (v) => <span className={styles.naCell}>{fmtBool(v.isTimeSaleTarget)}</span> },
+  { key: 'productUrl',        label: '商品URL',        defaultVisible: false, defaultWidth: 100, render: (v) => v.productUrl ? <a href={v.productUrl} target="_blank" rel="noopener noreferrer" className={styles.productUrlLink}>商品ページ</a> : <span className={styles.naCell}>—</span> },
 ];
 
 // ── Table panels ──────────────────────────────────────────────────────────────

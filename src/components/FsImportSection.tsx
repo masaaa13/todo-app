@@ -37,6 +37,38 @@ type VpsResponse = {
   warning?: string;
 };
 
+// ── Input parsing ─────────────────────────────────────────────────────────────
+
+type ParsedInput = {
+  valid: string[];
+  duplicates: number;
+  invalid: string[];
+};
+
+function parseInput(text: string): ParsedInput {
+  const tokens = text.split(/[\n,\s]+/).map((s) => s.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  let duplicates = 0;
+  const invalid: string[] = [];
+
+  for (const token of tokens) {
+    const digits = token.replace(/\D/g, '');
+    if (digits.length === 7) {
+      if (seen.has(digits)) {
+        duplicates++;
+      } else {
+        seen.add(digits);
+        valid.push(digits);
+      }
+    } else {
+      if (!invalid.includes(token)) invalid.push(token);
+    }
+  }
+
+  return { valid, duplicates, invalid };
+}
+
 // ── Category inference ────────────────────────────────────────────────────────
 
 type GroupRule = { keywords: string[]; group: string };
@@ -79,9 +111,9 @@ function loadExisting(): { products: MdProduct[]; variations: MdVariation[]; sav
     const parsedP = rawP ? (JSON.parse(rawP) as { products?: MdProduct[]; savedAt?: string }) : {};
     const parsedV = rawV ? (JSON.parse(rawV) as { variations?: MdVariation[] }) : {};
     return {
-      products:  Array.isArray(parsedP.products)   ? parsedP.products   : [],
+      products:   Array.isArray(parsedP.products)   ? parsedP.products   : [],
       variations: Array.isArray(parsedV.variations) ? parsedV.variations : [],
-      savedAt:   typeof parsedP.savedAt === 'string' ? parsedP.savedAt : null,
+      savedAt:    typeof parsedP.savedAt === 'string' ? parsedP.savedAt : null,
     };
   } catch {
     return { products: [], variations: [], savedAt: null };
@@ -114,7 +146,7 @@ function toMdProduct(p: VpsProduct): MdProduct {
 }
 
 function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
-  const stock = v.stockCount ?? null;
+  const stock    = v.stockCount ?? null;
   const varPrice = v.price != null ? Number(v.price) : unitPriceNum(p);
   return {
     productNo:      p.productNo,
@@ -126,6 +158,7 @@ function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
     status:         'FutureShop取込済み',
     nextAction:     '在庫確認',
     imageUrl:       p.imageUrl || undefined,
+    productUrl:     p.uri,
     colorBranchNo:  v.colorBranchNo || undefined,
     colorName:      v.colorName     || undefined,
     sizeBranchNo:   v.sizeBranchNo  || undefined,
@@ -158,17 +191,6 @@ function mergeVariations(existing: MdVariation[], incoming: MdVariation[]): MdVa
   return Array.from(map.values());
 }
 
-// ── Product number parsing ────────────────────────────────────────────────────
-
-function parseProductNos(text: string): string[] {
-  return [...new Set(
-    text
-      .split(/[\n,\s]+/)
-      .map((s) => s.trim().replace(/\D/g, ''))
-      .filter((s) => s.length === 7),
-  )];
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 type FsImportSectionProps = {
@@ -182,24 +204,31 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
   const [fetchedProducts, setFetchedProducts] = useState<VpsProduct[]>([]);
-  const [sentCount, setSentCount] = useState(0);
+  const [failedNos, setFailedNos] = useState<string[]>([]);
+  const [sendStatus, setSendStatus] = useState<'idle' | 'syncing' | 'sync-error'>('idle');
+  const [syncError, setSyncError] = useState('');
 
-  const parsedNos = parseProductNos(inputText);
-  const hasValid  = parsedNos.length > 0;
+  const parsedInput = parseInput(inputText);
+  const hasValid    = parsedInput.valid.length > 0;
 
   const handleFetch = useCallback(async () => {
-    if (!hasValid) return;
+    const parsed = parseInput(inputText);
+    if (parsed.valid.length === 0) return;
+    const nos = parsed.valid;
+
     setFetchStatus('loading');
     setFetchError('');
     setFetchedProducts([]);
-    setSentCount(0);
+    setFailedNos([]);
+    setSendStatus('idle');
+    setSyncError('');
 
     try {
       const res = await fetch('/api/check-products', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productNos: parsedNos,
+          productNos: nos,
           types: ['variation', 'image', 'comment', 'preorder', 'plannedStock'],
         }),
       });
@@ -211,38 +240,96 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
 
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
+
+      const returnedNos = new Set((data.products ?? []).map((p) => p.productNo));
       setFetchedProducts(data.products ?? []);
+      setFailedNos(nos.filter((no) => !returnedNos.has(no)));
       setFetchStatus('idle');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error');
       setFetchStatus('error');
     }
-  }, [parsedNos, hasValid]);
+  }, [inputText]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (fetchedProducts.length === 0 || !onSendToProducts) return;
+    setSendStatus('syncing');
+    setSyncError('');
 
     const { products: existing, variations: existingVars } = loadExisting();
-
-    const newProducts    = fetchedProducts.map(toMdProduct);
-    const newVariations  = fetchedProducts.flatMap((p) =>
+    const newProducts   = fetchedProducts.map(toMdProduct);
+    const newVariations = fetchedProducts.flatMap((p) =>
       (p.variations ?? []).map((v) => toMdVariation(v, p)),
     );
 
-    const merged          = mergeProducts(existing, newProducts);
-    const mergedVariations = mergeVariations(existingVars, newVariations);
+    let mergedProducts   = mergeProducts(existing, newProducts);
+    let mergedVariations = mergeVariations(existingVars, newVariations);
 
-    setSentCount(newProducts.length);
-    onSendToProducts(merged, mergedVariations);
+    // Auto stock sync for the imported products
+    const productNos = fetchedProducts.map((p) => p.productNo);
+    let syncFailed = false;
+    try {
+      const res = await fetch('/api/check-stock', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productNos }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { ok?: boolean; stock?: Record<string, number> };
+        if (data.ok && data.stock) {
+          const stock = data.stock;
+          mergedVariations = mergedVariations.map((v) => {
+            const skuNorm = v.skuCode.replaceAll('_', '');
+            if (!Object.prototype.hasOwnProperty.call(stock, skuNorm)) return v;
+            const s = stock[skuNorm];
+            return { ...v, actualStock: s, availableStock: s, ecStock: s, stockType: 'actual' as const };
+          });
+          const stockByProduct: Record<string, number> = {};
+          for (const v of mergedVariations) {
+            if (v.actualStock != null && productNos.includes(v.productNo)) {
+              stockByProduct[v.productNo] = (stockByProduct[v.productNo] ?? 0) + v.actualStock;
+            }
+          }
+          mergedProducts = mergedProducts.map((p) => {
+            if (!Object.prototype.hasOwnProperty.call(stockByProduct, p.productNo)) return p;
+            const s = stockByProduct[p.productNo];
+            return { ...p, actualStock: s, availableStock: s, stockType: 'actual' as const };
+          });
+        } else {
+          syncFailed = true;
+        }
+      } else {
+        syncFailed = true;
+      }
+    } catch {
+      syncFailed = true;
+    }
+
+    if (syncFailed) {
+      setSyncError('在庫同期に失敗しましたが、商品取込は完了しました');
+      setSendStatus('sync-error');
+      // Show the error briefly before navigating
+      await new Promise<void>((r) => setTimeout(r, 2500));
+    }
+
+    onSendToProducts(mergedProducts, mergedVariations);
   }, [fetchedProducts, onSendToProducts]);
 
   const handleInputChange = (text: string) => {
     setInputText(text);
     setFetchedProducts([]);
-    setSentCount(0);
+    setFailedNos([]);
+    setSendStatus('idle');
+    setSyncError('');
     setFetchError('');
     setFetchStatus('idle');
   };
+
+  const totalSkus    = fetchedProducts.reduce((n, p) => n + (p.variations?.length ?? 0), 0);
+  const withImage    = fetchedProducts.filter((p) => !!p.imageUrl).length;
+  const withPreorder = fetchedProducts.filter((p) => p.hasPreorder).length;
+  const withPlanned  = fetchedProducts.filter((p) => p.hasPlannedStock).length;
+  const hasSummary   = fetchedProducts.length > 0 || failedNos.length > 0;
 
   return (
     <div className={styles.section}>
@@ -263,10 +350,23 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
           placeholder={'1266302\n1266303,1266304'}
           rows={3}
         />
-        <div className={styles.inputMeta}>
-          {hasValid
-            ? `${parsedNos.length}件の品番を検出: ${parsedNos.join(', ')}`
-            : '7桁の品番を入力してください'}
+        <div className={styles.parsedMeta}>
+          {parsedInput.valid.length > 0 ? (
+            <span className={styles.parsedValid}>
+              取得対象: {parsedInput.valid.length}件
+              <span className={styles.parsedNosList}> — {parsedInput.valid.join(', ')}</span>
+            </span>
+          ) : (
+            <span className={styles.parsedHint}>7桁の品番を入力してください</span>
+          )}
+          {parsedInput.duplicates > 0 && (
+            <span className={styles.parsedDup}>　重複除外: {parsedInput.duplicates}件</span>
+          )}
+          {parsedInput.invalid.length > 0 && (
+            <span className={styles.parsedInvalid}>
+              　無効: {parsedInput.invalid.join(', ')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -284,29 +384,68 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         <div className={styles.errorMsg}>{fetchError}</div>
       )}
 
+      {hasSummary && (
+        <div className={styles.fetchSummary}>
+          {fetchedProducts.length > 0 && (
+            <span className={styles.summarySuccess}>取得成功: {fetchedProducts.length}品番</span>
+          )}
+          {fetchedProducts.length > 0 && (
+            <>
+              <span className={styles.summaryDot}>·</span>
+              <span>SKU数: {totalSkus}件</span>
+              <span className={styles.summaryDot}>·</span>
+              <span>画像あり: {withImage}件</span>
+              {withPreorder > 0 && (
+                <>
+                  <span className={styles.summaryDot}>·</span>
+                  <span>予約販売あり: {withPreorder}件</span>
+                </>
+              )}
+              {withPlanned > 0 && (
+                <>
+                  <span className={styles.summaryDot}>·</span>
+                  <span>予定在庫あり: {withPlanned}件</span>
+                </>
+              )}
+            </>
+          )}
+          {failedNos.length > 0 && (
+            <>
+              {fetchedProducts.length > 0 && <span className={styles.summaryDot}>·</span>}
+              <span className={styles.summaryFail}>
+                取得失敗: {failedNos.length}品番（{failedNos.join(', ')}）
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {fetchedProducts.length > 0 && (
         <>
-          <div className={styles.previewLabel}>取得結果: {fetchedProducts.length}件</div>
+          <div className={styles.previewLabel}>取得結果</div>
           <div className={styles.previewList}>
             {fetchedProducts.map((p) => (
               <ProductPreviewCard key={p.productNo} product={p} />
             ))}
           </div>
+
           <div className={styles.sendRow}>
             <button
               className={styles.sendBtn}
               onClick={handleSend}
-              disabled={!onSendToProducts || sentCount > 0}
+              disabled={!onSendToProducts || sendStatus === 'syncing' || sendStatus === 'sync-error'}
             >
-              商品一覧へ反映
+              {sendStatus === 'syncing' ? '在庫同期中...' : '商品一覧へ反映'}
             </button>
             <span className={styles.sendDesc}>
-              既存データと統合して商品一覧タブへ移動します。
+              {sendStatus === 'idle'
+                ? `${fetchedProducts.length}品番を既存データと統合して商品一覧タブへ移動します。`
+                : sendStatus === 'syncing'
+                ? 'FutureShopから在庫を取得しています...'
+                : ''}
             </span>
-            {sentCount > 0 && (
-              <span className={styles.sentDone}>
-                ✓ {sentCount}件を反映しました
-              </span>
+            {syncError && (
+              <span className={styles.syncErrorMsg}>{syncError}</span>
             )}
           </div>
         </>

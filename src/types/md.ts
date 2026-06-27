@@ -92,6 +92,7 @@ export type MdVariation = {
   sizeName?: string;
   janCode?: string;
   price?: number | null;
+  productUrl?: string;
 
   // 欲しいもの効果測定
   wishlistAddedAt?: string;

@@ -536,6 +536,37 @@ npm run fs:products:check -- --products 1266302,1266303
 
 ---
 
+## Phase 4.9: FutureShop商品取込 UX改善（完了）
+
+**実装内容:**
+
+- **複数品番一括取込UX改善:**
+  - 品番入力を解析し「取得対象: N件」「重複除外: N件」「無効: X」をリアルタイム表示
+  - FutureShopに存在しない品番は「取得失敗: N品番（品番リスト）」として明示
+  - 取得後に取得成功品番数・SKU数・画像あり・予約販売あり・予定在庫あり・取得失敗を一覧表示
+  - 一部品番が取得失敗でも成功分は引き続きプレビュー・反映可能（部分成功）
+
+- **取込後の自動在庫同期:**
+  - 「商品一覧へ反映」時に自動で `/api/check-stock` を呼び出し在庫を同期
+  - 成功時: MdVariation の `actualStock` / `availableStock` / `ecStock` / `stockType` を反映し、MdProduct は品番単位で合計在庫を算出してから画面遷移
+  - 失敗時: 「在庫同期に失敗しましたが、商品取込は完了しました」を2.5秒表示→遷移
+  - 既存の商品一覧タブ「在庫同期」ボタンには影響なし
+
+- **商品URLを商品一覧でクリック可能に:**
+  - `MdVariation` に `productUrl?: string` を追加
+  - FutureShop取込時に `productUrl = p.uri` を MdProduct・MdVariation 両方に付与
+  - 商品一覧 商品別・バリエーション別の両方に「商品URL」列を追加（`defaultVisible: false`）
+  - クリックで商品ページを新規タブで開く (`target="_blank" rel="noopener noreferrer"`)
+  - 商品別・バリエーション別のCSV出力に「商品URL」列を追加
+
+**今後の予定:**
+
+- 受注API連携（売上データのSKU別集計 → salesQty7d 等への反映）
+- 更新日指定での一括取込（FutureShop商品検索APIの更新日フィルター活用）
+- カテゴリ/グループによる一括取込（大量品番の効率的な取込フロー）
+
+---
+
 ## Phase 5: 欲しいものリスト高度化
 
 - 店舗側へ共有する補充リスト自動生成（バリエーション別を基本単位とする）
