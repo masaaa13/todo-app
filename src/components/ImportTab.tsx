@@ -6,6 +6,7 @@ import { useFsProducts } from '../hooks/useFsProducts';
 import type { ImportRowStatus } from '../types/importJob';
 import { IMPORT_ROW_STATUS_LABELS } from '../types/importJob';
 import type { MdProduct, MdVariation } from '../types/md';
+import { FsImportSection } from './FsImportSection';
 import styles from './ImportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -3267,6 +3268,8 @@ export function ImportTab({ user, onSendToProducts }: ImportTabProps) {
           onDownloadCategory={handleDownloadCategory}
         />
       )}
+
+      <FsImportSection onSendToProducts={onSendToProducts} />
     </div>
   );
 }

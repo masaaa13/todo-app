@@ -503,7 +503,7 @@ npm run fs:products:check -- --products 1266302,1266303
 | サイズ枝番 | `variations[].sizeBranchNo` | ✓ 例: `"9"` |
 | サイズ名 | `variations[].sizeName` | ✓ 例: `"F"` |
 | JANコード | `variations[].janCode` | ✓ 取得済み |
-| 在庫数 | `variations[].stockCount` | — null（`/check-stock` を使用） |
+| 在庫数 | `variations[].stockCount` | ✓ 取得可能（最新在庫同期・一括更新は `/check-stock` を正とする） |
 | 予約販売 | `products[].hasPreorder` | ✓ `true` |
 | 予定在庫 | `products[].hasPlannedStock` | ✓ `true` |
 
@@ -519,7 +519,7 @@ npm run fs:products:check -- --products 1266302,1266303
 `skuNo` / `horizontalNo` / `horizontalName` / `verticalNo` / `verticalName` / `janCode` / `count` / `price` / `representativeVariation` / `leadTime` / `weight`
 
 - `count` はバリエーションオブジェクト直下に存在（`inventoryInfo.count` ではない）
-- 在庫数を `/check-products` から取得したい場合は VPS 側で `v.count` をマップする
+- VPS 側で `v.count` をマップ済み → `/check-products` でも `variations[].stockCount` として取得可能
 
 **保存先（git管理外）:**
 

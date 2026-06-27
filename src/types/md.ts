@@ -35,6 +35,14 @@ export type MdProduct = {
   isCollaboration?: boolean;
   isSaleTarget?: boolean;
   isTimeSaleTarget?: boolean;
+
+  // FutureShop取込フィールド
+  price?: number | null;
+  productUrl?: string;
+  productUrlCode?: string;
+  visible?: boolean;
+  hasPreorder?: boolean;
+  hasPlannedStock?: boolean;
 };
 
 export type MdVariation = {
@@ -76,6 +84,14 @@ export type MdVariation = {
   isCollaboration?: boolean;
   isSaleTarget?: boolean;
   isTimeSaleTarget?: boolean;
+
+  // FutureShop取込フィールド
+  colorBranchNo?: string;
+  colorName?: string;
+  sizeBranchNo?: string;
+  sizeName?: string;
+  janCode?: string;
+  price?: number | null;
 
   // 欲しいもの効果測定
   wishlistAddedAt?: string;
