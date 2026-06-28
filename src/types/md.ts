@@ -96,6 +96,9 @@ export type MdVariation = {
   janCode?: string;
   price?: number | null;
   productUrl?: string;
+  visible?: boolean;
+  hasPreorder?: boolean;
+  hasPlannedStock?: boolean;
 
   // 欲しいもの効果測定
   wishlistAddedAt?: string;

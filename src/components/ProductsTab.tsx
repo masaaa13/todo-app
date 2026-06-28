@@ -14,6 +14,12 @@ type SalesSyncStatus =
   | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; pageCount: number; paginationStatus: 'complete' | 'limit_reached' }
   | { state: 'error'; message: string };
 
+type FsUpdateStatus =
+  | { state: 'idle' }
+  | { state: 'syncing'; done: number; total: number }
+  | { state: 'success'; targetCount: number; updatedProducts: number; unchangedProducts: number; updatedSkus: number }
+  | { state: 'error'; message: string };
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'product' | 'variation';
@@ -179,6 +185,16 @@ function formatSavedAt(iso: string): string {
   const h = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${y}/${mo}/${day} ${h}:${min}`;
+}
+
+function normalizeVisible(value: unknown): boolean | null {
+  if (value === true  || value === 'true')  return true;
+  if (value === false || value === 'false') return false;
+  return null;
+}
+
+function daysSince(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
 }
 
 // ── Column config helpers ─────────────────────────────────────────────────────
@@ -1175,6 +1191,57 @@ function NextPhaseCard() {
   );
 }
 
+// ── FS update section ─────────────────────────────────────────────────────────
+
+type FsUpdateSectionProps = {
+  onUpdateFsProducts?: () => Promise<void>;
+  fsUpdateStatus?: FsUpdateStatus;
+  lastFsSyncAt?: string | null;
+  hasData: boolean;
+};
+
+function FsUpdateSection({ onUpdateFsProducts, fsUpdateStatus, lastFsSyncAt, hasData }: FsUpdateSectionProps) {
+  const status = fsUpdateStatus ?? { state: 'idle' as const };
+  const isSyncing = status.state === 'syncing';
+  const isStale = lastFsSyncAt ? daysSince(lastFsSyncAt) > 7 : false;
+
+  return (
+    <div className={styles.fsUpdateSection}>
+      <div className={styles.fsUpdateLeft}>
+        <button
+          className={styles.fsUpdateBtn}
+          onClick={onUpdateFsProducts}
+          disabled={!hasData || isSyncing || !onUpdateFsProducts}
+          title={!hasData ? '商品データがありません' : 'FutureShopから商品情報を一括更新します'}
+        >
+          {isSyncing && status.state === 'syncing'
+            ? `更新中... (${status.done}/${status.total})`
+            : 'FutureShop商品情報を更新'}
+        </button>
+        {lastFsSyncAt && (
+          <span className={`${styles.lastSyncText} ${isStale ? styles.lastSyncWarning : ''}`}>
+            商品情報 最終更新: {formatSavedAt(lastFsSyncAt)}
+            {isStale && '　⚠ 7日以上更新されていません'}
+          </span>
+        )}
+      </div>
+      {status.state === 'success' && (
+        <div className={styles.fsUpdateResult}>
+          <span className={styles.fsUpdateResultSuccess}>更新完了</span>
+          <span className={styles.fsUpdateResultDetail}>
+            対象: {status.targetCount}品番 / 更新: {status.updatedProducts}品番 / 変更なし: {status.unchangedProducts}品番 / SKU更新: {status.updatedSkus}件
+          </span>
+        </div>
+      )}
+      {status.state === 'error' && (
+        <div className={styles.fsUpdateResult}>
+          <span className={styles.fsUpdateResultError}>更新エラー: {status.message}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Sales sync section ────────────────────────────────────────────────────────
 
 type SalesSyncSectionProps = {
@@ -1318,6 +1385,9 @@ type ProductsTabProps = {
   syncStatus?: StockSyncStatus;
   onSyncSales?: (dateFrom: string, dateTo: string) => Promise<void>;
   salesSyncStatus?: SalesSyncStatus;
+  onUpdateFsProducts?: () => Promise<void>;
+  fsUpdateStatus?: FsUpdateStatus;
+  lastFsSyncAt?: string | null;
 };
 
 export function ProductsTab({
@@ -1329,6 +1399,9 @@ export function ProductsTab({
   syncStatus,
   onSyncSales,
   salesSyncStatus,
+  onUpdateFsProducts,
+  fsUpdateStatus,
+  lastFsSyncAt,
 }: ProductsTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('product');
   const [keyword, setKeyword] = useState('');
@@ -1414,9 +1487,9 @@ export function ProductsTab({
       if (kw && !p.productNo.toLowerCase().includes(kw) && !p.productName.toLowerCase().includes(kw)) return false;
       if (category && p.category !== category) return false;
       if (status && p.status !== status) return false;
-      if (visible === 'public'  && p.visible !== true)  return false;
-      if (visible === 'private' && p.visible !== false) return false;
-      if (visible === 'unknown' && p.visible != null)   return false;
+      if (visible === 'public'  && normalizeVisible(p.visible) !== true)  return false;
+      if (visible === 'private' && normalizeVisible(p.visible) !== false) return false;
+      if (visible === 'unknown' && normalizeVisible(p.visible) !== null)  return false;
       return true;
     });
   }, [activeData, keyword, category, status, visible]);
@@ -1488,6 +1561,13 @@ export function ProductsTab({
         onSyncStocks={onSyncStocks}
         syncStatus={syncStatus}
         hasVariations={hasVariations}
+      />
+
+      <FsUpdateSection
+        onUpdateFsProducts={onUpdateFsProducts}
+        fsUpdateStatus={fsUpdateStatus}
+        lastFsSyncAt={lastFsSyncAt}
+        hasData={isReal}
       />
 
       <SalesSyncSection

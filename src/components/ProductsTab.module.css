@@ -1014,3 +1014,70 @@
   padding: 6px 10px;
 }
 
+
+/* ── FS update section ── */
+.fsUpdateSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--color-card);
+  border: 1.5px solid #a5b4fc;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.fsUpdateLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.fsUpdateBtn {
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: none;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.fsUpdateBtn:hover:not(:disabled) { background: #4338ca; }
+.fsUpdateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.lastSyncText {
+  font-size: 0.74rem;
+  color: var(--color-text-sub);
+}
+
+.lastSyncWarning {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.fsUpdateResult {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.fsUpdateResultSuccess {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-success);
+}
+
+.fsUpdateResultError {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.fsUpdateResultDetail {
+  font-size: 0.72rem;
+  color: var(--color-text-sub);
+}

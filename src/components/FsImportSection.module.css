@@ -572,3 +572,151 @@
   border: 1px solid #86efac;
   vertical-align: middle;
 }
+
+/* ── Update existing row ── */
+.updateExistingRow {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.updateExistingNote {
+  font-size: 0.72rem;
+  color: var(--color-text-sub);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 4px 10px;
+  width: 100%;
+}
+
+/* ── Full sync result ── */
+.fullSyncResult {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fullSyncResultTitle {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--color-success);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fullSyncLimitBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #fef9ee;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.fullSyncDoneBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #16a34a;
+  border: 1px solid #86efac;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.fullSyncGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.fullSyncItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.fullSyncLabel {
+  font-size: 0.68rem;
+  color: var(--color-text-sub);
+}
+
+.fullSyncValue {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.fullSyncWarning {
+  font-size: 0.72rem;
+  color: #b45309;
+  background: #fef9ee;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0;
+}
+
+/* ── Change log ── */
+.changeLogBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+.changeLogTitle {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+}
+
+.changeLogRow {
+  display: flex;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--color-text);
+  flex-wrap: wrap;
+}
+
+.changeLogNo {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* ── Send result block ── */
+.sendResultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.sendResultDetail {
+  font-size: 0.72rem;
+  color: var(--color-text-sub);
+}

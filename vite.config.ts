@@ -195,12 +195,7 @@ export default defineConfig({
                   ? parsed.types
                   : ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
 
-                const isSearchMode = !productNos && (
-                  updateDateStart !== undefined ||
-                  updateDateEnd !== undefined ||
-                  mainGroupUrl !== undefined ||
-                  janCode !== undefined
-                );
+                const isSearchMode = !Array.isArray(productNos);
 
                 if (!isSearchMode) {
                   if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 50) {

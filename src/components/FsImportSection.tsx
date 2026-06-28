@@ -4,9 +4,8 @@ import styles from './FsImportSection.module.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_TYPES  = ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
-const MAX_PAGES      = 5;
-const MAX_PRODUCTS   = 250;
+const DEFAULT_TYPES       = ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
+const MAX_FULL_SYNC_PAGES = 50;
 
 // ── VPS response types ────────────────────────────────────────────────────────
 
@@ -51,32 +50,49 @@ type VpsResponse = {
 };
 
 function extractCursor(nextUrl: string): string | null {
-  try {
-    return new URL(nextUrl).searchParams.get('cursor');
-  } catch {
-    return null;
-  }
+  try { return new URL(nextUrl).searchParams.get('cursor'); }
+  catch { return null; }
 }
 
-// ── Mode / search form types ──────────────────────────────────────────────────
+// ── Mode / types ──────────────────────────────────────────────────────────────
 
-type Mode = 'manual' | 'search';
+type Mode = 'manual' | 'fullSync';
+type SyncVisibleFilter = 'all' | 'public' | 'private';
 
-type SearchForm = {
-  productNoPrefix: string;
-  mainGroupUrl: string;
-  dateFrom: string;
-  dateTo: string;
-  visible: 'all' | 'public' | 'private';
+type SyncChangeLog = { productNo: string; changes: string[] };
+
+type FullSyncResult = {
+  totalFetched: number;
+  newProducts: number;
+  updatedProducts: number;
+  skippedProducts: number;
+  newSkus: number;
+  updatedSkus: number;
+  skippedSkus: number;
+  pageCount: number;
+  paginationStatus: 'complete' | 'limit_reached';
+  changeLog: SyncChangeLog[];
+};
+
+type FullSyncState =
+  | { phase: 'idle' }
+  | { phase: 'loading'; page: number }
+  | { phase: 'done'; result: FullSyncResult }
+  | { phase: 'error'; message: string };
+
+type SendResult = {
+  added: number;
+  updated: number;
+  skipped: number;
+  skuAdded: number;
+  skuUpdated: number;
+  skuSkipped: number;
+  stockOk: boolean;
 };
 
 // ── Input parsing (manual mode) ───────────────────────────────────────────────
 
-type ParsedInput = {
-  valid: string[];
-  duplicates: number;
-  invalid: string[];
-};
+type ParsedInput = { valid: string[]; duplicates: number; invalid: string[] };
 
 function parseInput(text: string): ParsedInput {
   const tokens = text.split(/[\n,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -84,21 +100,15 @@ function parseInput(text: string): ParsedInput {
   const valid: string[] = [];
   let duplicates = 0;
   const invalid: string[] = [];
-
   for (const token of tokens) {
     const digits = token.replace(/\D/g, '');
     if (digits.length === 7) {
-      if (seen.has(digits)) {
-        duplicates++;
-      } else {
-        seen.add(digits);
-        valid.push(digits);
-      }
+      if (seen.has(digits)) { duplicates++; }
+      else { seen.add(digits); valid.push(digits); }
     } else {
       if (!invalid.includes(token)) invalid.push(token);
     }
   }
-
   return { valid, duplicates, invalid };
 }
 
@@ -183,46 +193,155 @@ function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
   const stock    = v.stockCount ?? null;
   const varPrice = v.price != null ? Number(v.price) : unitPriceNum(p);
   return {
-    productNo:      p.productNo,
-    productName:    p.name,
-    skuCode:        v.skuCode,
-    color:          v.colorName || undefined,
-    size:           v.sizeName  || undefined,
-    category:       inferCategory(p.name),
-    status:         'FutureShop取込済み',
-    nextAction:     '在庫確認',
-    imageUrl:       p.imageUrl || undefined,
-    productUrl:     p.uri,
-    colorBranchNo:  v.colorBranchNo || undefined,
-    colorName:      v.colorName     || undefined,
-    sizeBranchNo:   v.sizeBranchNo  || undefined,
-    sizeName:       v.sizeName      || undefined,
-    janCode:        v.janCode       || undefined,
-    price:          isNaN(varPrice ?? NaN) ? null : varPrice,
-    stockType:      'actual',
-    actualStock:    stock,
-    availableStock: stock,
-    ecStock:        stock,
+    productNo:       p.productNo,
+    productName:     p.name,
+    skuCode:         v.skuCode,
+    color:           v.colorName || undefined,
+    size:            v.sizeName  || undefined,
+    category:        inferCategory(p.name),
+    status:          'FutureShop取込済み',
+    nextAction:      '在庫確認',
+    imageUrl:        p.imageUrl || undefined,
+    productUrl:      p.uri,
+    colorBranchNo:   v.colorBranchNo || undefined,
+    colorName:       v.colorName     || undefined,
+    sizeBranchNo:    v.sizeBranchNo  || undefined,
+    sizeName:        v.sizeName      || undefined,
+    janCode:         v.janCode       || undefined,
+    price:           isNaN(varPrice ?? NaN) ? null : varPrice,
+    stockType:       'actual',
+    actualStock:     stock,
+    availableStock:  stock,
+    ecStock:         stock,
+    visible:         normalizeVisible(p.visible) ?? undefined,
+    hasPreorder:     p.hasPreorder,
+    hasPlannedStock: p.hasPlannedStock,
   };
 }
 
-// ── Merge helpers ─────────────────────────────────────────────────────────────
+// ── Smart merge ───────────────────────────────────────────────────────────────
 
-function mergeProducts(existing: MdProduct[], incoming: MdProduct[]): MdProduct[] {
-  const map = new Map(existing.map((p) => [p.productNo, p]));
-  for (const p of incoming) {
-    map.set(p.productNo, { ...(map.get(p.productNo) ?? {}), ...p });
-  }
-  return Array.from(map.values());
+const FS_PRODUCT_UPDATE_KEYS: (keyof MdProduct)[] = [
+  'productName', 'category', 'imageUrl', 'price', 'productUrl', 'productUrlCode',
+  'visible', 'hasPreorder', 'hasPlannedStock', 'importSource', 'skuCount',
+];
+
+const FS_VARIATION_UPDATE_KEYS: (keyof MdVariation)[] = [
+  'productName', 'color', 'size', 'colorBranchNo', 'colorName',
+  'sizeBranchNo', 'sizeName', 'janCode', 'price',
+  'actualStock', 'availableStock', 'ecStock', 'stockType',
+  'productUrl', 'imageUrl', 'visible', 'hasPreorder', 'hasPlannedStock',
+];
+
+function fmtVis(v: unknown): string {
+  return v === true ? '公開中' : v === false ? '非公開' : '不明';
 }
 
-function mergeVariations(existing: MdVariation[], incoming: MdVariation[]): MdVariation[] {
-  const key = (v: MdVariation) => `${v.productNo}__${v.skuCode}`;
-  const map = new Map(existing.map((v) => [key(v), v]));
-  for (const v of incoming) {
-    map.set(key(v), { ...(map.get(key(v)) ?? {}), ...v });
+function detectProductChanges(existing: MdProduct, incoming: MdProduct): string[] {
+  const out: string[] = [];
+  for (const key of FS_PRODUCT_UPDATE_KEYS) {
+    const o = (existing as Record<string, unknown>)[key];
+    const n = (incoming as Record<string, unknown>)[key];
+    if (n === undefined || o === n) continue;
+    if (key === 'visible') out.push(`visible: ${fmtVis(o)} → ${fmtVis(n)}`);
+    else if (key === 'price') out.push(`price: ${o ?? '—'} → ${n}`);
+    else out.push(`${key} 更新`);
   }
-  return Array.from(map.values());
+  return out;
+}
+
+function detectVariationChanges(existing: MdVariation, incoming: MdVariation): string[] {
+  const out: string[] = [];
+  for (const key of FS_VARIATION_UPDATE_KEYS) {
+    const o = (existing as Record<string, unknown>)[key];
+    const n = (incoming as Record<string, unknown>)[key];
+    if (n === undefined || o === n) continue;
+    out.push(`${key} 更新`);
+  }
+  return out;
+}
+
+type MergeOutput = {
+  products: MdProduct[];
+  variations: MdVariation[];
+  stats: {
+    newProducts: number; updatedProducts: number; skippedProducts: number;
+    newSkus: number; updatedSkus: number; skippedSkus: number;
+  };
+  changeLog: SyncChangeLog[];
+};
+
+function smartMerge(
+  existing: MdProduct[],
+  existingVars: MdVariation[],
+  incoming: MdProduct[],
+  incomingVars: MdVariation[],
+  updateExisting: boolean,
+): MergeOutput {
+  const exMap    = new Map(existing.map((p) => [p.productNo, p]));
+  const varKey   = (v: MdVariation) => `${v.productNo}__${v.skuCode}`;
+  const exVarMap = new Map(existingVars.map((v) => [varKey(v), v]));
+
+  const resultProd = new Map(existing.map((p) => [p.productNo, p]));
+  const resultVar  = new Map(existingVars.map((v) => [varKey(v), v]));
+
+  const stats = { newProducts: 0, updatedProducts: 0, skippedProducts: 0, newSkus: 0, updatedSkus: 0, skippedSkus: 0 };
+  const changeLog: SyncChangeLog[] = [];
+
+  for (const p of incoming) {
+    const ex = exMap.get(p.productNo);
+    if (!ex) {
+      resultProd.set(p.productNo, p);
+      stats.newProducts++;
+    } else if (updateExisting) {
+      const changes = detectProductChanges(ex, p);
+      if (changes.length > 0) {
+        const patch: Partial<MdProduct> = {};
+        for (const key of FS_PRODUCT_UPDATE_KEYS) {
+          const n = (p as Record<string, unknown>)[key];
+          if (n !== undefined) (patch as Record<string, unknown>)[key] = n;
+        }
+        resultProd.set(p.productNo, { ...ex, ...patch });
+        stats.updatedProducts++;
+        if (changeLog.length < 20) changeLog.push({ productNo: p.productNo, changes });
+      } else {
+        stats.skippedProducts++;
+      }
+    } else {
+      stats.skippedProducts++;
+    }
+  }
+
+  for (const v of incomingVars) {
+    const k   = varKey(v);
+    const exV = exVarMap.get(k);
+    if (!exV) {
+      resultVar.set(k, v);
+      stats.newSkus++;
+    } else if (updateExisting) {
+      const changes = detectVariationChanges(exV, v);
+      if (changes.length > 0) {
+        const patch: Partial<MdVariation> = {};
+        for (const key of FS_VARIATION_UPDATE_KEYS) {
+          const n = (v as Record<string, unknown>)[key];
+          if (n !== undefined) (patch as Record<string, unknown>)[key] = n;
+        }
+        resultVar.set(k, { ...exV, ...patch });
+        stats.updatedSkus++;
+      } else {
+        stats.skippedSkus++;
+      }
+    } else {
+      stats.skippedSkus++;
+    }
+  }
+
+  return {
+    products:   Array.from(resultProd.values()),
+    variations: Array.from(resultVar.values()),
+    stats,
+    changeLog,
+  };
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -235,65 +354,40 @@ type FsImportSectionProps = {
 
 export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const [mode, setMode] = useState<Mode>('manual');
+  const [updateExisting, setUpdateExisting] = useState(false);
 
   // Manual mode
   const [inputText, setInputText] = useState('');
 
-  // Condition search mode
-  const [searchForm, setSearchForm] = useState<SearchForm>({
-    productNoPrefix: '',
-    mainGroupUrl: '',
-    dateFrom: '',
-    dateTo: '',
-    visible: 'all',
-  });
+  // Full sync mode
+  const [syncVisibleFilter, setSyncVisibleFilter] = useState<SyncVisibleFilter>('all');
+  const [fullSyncState, setFullSyncState] = useState<FullSyncState>({ phase: 'idle' });
 
-  // Shared fetch state
+  // Manual fetch state
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
   const [fetchedProducts, setFetchedProducts] = useState<VpsProduct[]>([]);
-  const [rawFetchCount, setRawFetchCount]     = useState(0);
   const [failedNos, setFailedNos] = useState<string[]>([]);
   const [selectedNos, setSelectedNos] = useState<Set<string>>(new Set());
-  const [hasMore, setHasMore]         = useState(false);
-  const [nextCursor, setNextCursor]   = useState<string | null>(null);
-  const [pageCount, setPageCount]     = useState(0);
-  const [noMorePages, setNoMorePages] = useState<'limit' | 'done' | null>(null);
 
-  // Send state
+  // Manual send state
   const [sendStatus, setSendStatus] = useState<'idle' | 'syncing'>('idle');
   const [sentNos, setSentNos] = useState<Set<string>>(new Set());
-  const [sendResult, setSendResult] = useState<{ count: number; stockOk: boolean } | null>(null);
+  const [sendResult, setSendResult] = useState<SendResult | null>(null);
 
-  // Derived
-  const parsedInput       = parseInput(inputText);
-  const hasValid          = parsedInput.valid.length > 0;
-  const hasDateRange      = !!(searchForm.dateFrom && searchForm.dateTo);
-  const hasDateIncomplete = !!((searchForm.dateFrom && !searchForm.dateTo) || (!searchForm.dateFrom && searchForm.dateTo));
-  const hasApiCondition   = !!(hasDateRange || searchForm.mainGroupUrl.trim());
-  const onlyPrefix        = !!(searchForm.productNoPrefix.trim() && !hasApiCondition);
-
-  let dateRangeError = '';
-  if (searchForm.dateFrom && searchForm.dateTo) {
-    const diff = (new Date(searchForm.dateTo).getTime() - new Date(searchForm.dateFrom).getTime()) / (1000 * 60 * 60 * 24);
-    if (diff < 0) dateRangeError = '更新日Fromは更新日To以前の日付を指定してください';
-    else if (diff > 31) dateRangeError = '更新日の範囲は31日以内で指定してください';
-  }
+  const parsedInput = parseInput(inputText);
+  const hasValid    = parsedInput.valid.length > 0;
 
   const clearFetchState = () => {
     setFetchedProducts([]);
-    setRawFetchCount(0);
     setFailedNos([]);
     setSelectedNos(new Set());
-    setHasMore(false);
-    setNextCursor(null);
-    setPageCount(0);
-    setNoMorePages(null);
     setSendStatus('idle');
     setSentNos(new Set());
     setSendResult(null);
     setFetchError('');
     setFetchStatus('idle');
+    setFullSyncState({ phase: 'idle' });
   };
 
   const switchMode = (newMode: Mode) => {
@@ -306,21 +400,20 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   const handleFetch = useCallback(async () => {
     const parsed = parseInput(inputText);
     if (parsed.valid.length === 0) return;
-    const nos = parsed.valid;
 
     setFetchStatus('loading');
     setFetchError('');
     setFetchedProducts([]);
     setFailedNos([]);
     setSelectedNos(new Set());
-    setHasMore(false);
     setSendStatus('idle');
+    setSendResult(null);
 
     try {
       const res = await fetch('/api/check-products', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productNos: nos, types: DEFAULT_TYPES }),
+        body: JSON.stringify({ productNos: parsed.valid, types: DEFAULT_TYPES }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({})) as { error?: string };
@@ -329,11 +422,11 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       const data = await res.json() as VpsResponse;
       if (!data.ok) throw new Error('VPS returned ok=false');
 
-      const products = data.products ?? [];
-      const returnedNos = new Set(products.map((p) => p.productNo));
+      const products      = data.products ?? [];
+      const returnedNos   = new Set(products.map((p) => p.productNo));
       setFetchedProducts(products);
       setSelectedNos(new Set(products.map((p) => p.productNo)));
-      setFailedNos(nos.filter((no) => !returnedNos.has(no)));
+      setFailedNos(parsed.valid.filter((no) => !returnedNos.has(no)));
       setFetchStatus('idle');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error');
@@ -341,44 +434,25 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     }
   }, [inputText]);
 
-  // ── Condition search fetch ──────────────────────────────────────────────────
+  // ── Full sync ──────────────────────────────────────────────────────────────
 
-  const handleSearchFetch = useCallback(async () => {
-    if (!hasApiCondition || dateRangeError || hasDateIncomplete) return;
-
-    setFetchStatus('loading');
-    setFetchError('');
-    setFetchedProducts([]);
-    setRawFetchCount(0);
-    setFailedNos([]);
-    setSelectedNos(new Set());
-    setHasMore(false);
-    setNextCursor(null);
-    setPageCount(0);
-    setNoMorePages(null);
-    setSendStatus('idle');
-    setSentNos(new Set());
-    setSendResult(null);
-
-    const prefix       = searchForm.productNoPrefix.trim();
-    const useAutoPaging = !!prefix;
-
-    const buildBody = (cursor?: string | null): Record<string, unknown> => {
-      const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
-      if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
-      if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
-      if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
-      if (cursor)                         body.cursor          = cursor;
-      return body;
-    };
+  const handleFullSync = useCallback(async () => {
+    setFullSyncState({ phase: 'loading', page: 1 });
 
     try {
-      if (!useAutoPaging) {
-        // Single page fetch (no prefix)
+      let allProducts: VpsProduct[] = [];
+      let cursor: string | null = null;
+      let pageCount = 0;
+      let paginationStatus: 'complete' | 'limit_reached' = 'complete';
+
+      while (pageCount < MAX_FULL_SYNC_PAGES) {
+        const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
+        if (cursor) body.cursor = cursor;
+
         const res = await fetch('/api/check-products', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildBody()),
+          body: JSON.stringify(body),
         });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({})) as { error?: string };
@@ -387,152 +461,54 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         const data = await res.json() as VpsResponse;
         if (!data.ok) throw new Error('VPS returned ok=false');
 
-        const rawCount = (data.products ?? []).length;
-        let products = data.products ?? [];
+        allProducts = [...allProducts, ...(data.products ?? [])];
+        pageCount++;
 
-        if (searchForm.visible !== 'all') {
-          const wantPublic = searchForm.visible === 'public';
-          products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
-        }
+        const nextCursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
+        if (!nextCursor) { paginationStatus = 'complete'; break; }
+        if (pageCount >= MAX_FULL_SYNC_PAGES) { paginationStatus = 'limit_reached'; break; }
 
-        const cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
-        const canFetchMore = !!cursor && products.length < MAX_PRODUCTS;
-        setRawFetchCount(rawCount);
-        setFetchedProducts(products);
-        setSelectedNos(new Set(products.map((p) => p.productNo)));
-        setNextCursor(cursor);
-        setPageCount(1);
-        setHasMore(canFetchMore);
-        setNoMorePages(canFetchMore ? null : data.nextUrl ? 'limit' : null);
-        setFetchStatus('idle');
-      } else {
-        // Auto-paging: fetch up to MAX_PAGES to collect prefix matches
-        let allRaw: VpsProduct[] = [];
-        let cursor: string | null = null;
-        let page = 0;
-        let reachedEnd = false;
-
-        while (page < MAX_PAGES && allRaw.length < MAX_PRODUCTS) {
-          if (page > 0) await new Promise<void>((r) => setTimeout(r, 1000));
-          const res = await fetch('/api/check-products', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildBody(cursor)),
-          });
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({})) as { error?: string };
-            throw new Error(errData.error ?? `HTTP ${res.status}`);
-          }
-          const data = await res.json() as VpsResponse;
-          if (!data.ok) throw new Error('VPS returned ok=false');
-
-          allRaw = [...allRaw, ...(data.products ?? [])];
-          page++;
-          cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
-          if (!cursor) { reachedEnd = true; break; }
-        }
-
-        const rawCount = allRaw.length;
-
-        // Dedup by productNo then apply filters
-        const seen = new Set<string>();
-        let products = allRaw
-          .filter((p) => { if (seen.has(p.productNo)) return false; seen.add(p.productNo); return true; })
-          .filter((p) => p.productNo.startsWith(prefix));
-
-        if (searchForm.visible !== 'all') {
-          const wantPublic = searchForm.visible === 'public';
-          products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
-        }
-
-        const hitLimit = !reachedEnd;
-        setRawFetchCount(rawCount);
-        setFetchedProducts(products);
-        setSelectedNos(new Set(products.map((p) => p.productNo)));
-        setNextCursor(cursor);
-        setPageCount(page);
-        setHasMore(false);
-        setNoMorePages(hitLimit ? 'limit' : page > 1 ? 'done' : null);
-        setFetchStatus('idle');
+        cursor = nextCursor;
+        setFullSyncState({ phase: 'loading', page: pageCount + 1 });
+        await new Promise<void>((r) => setTimeout(r, 1000));
       }
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Unknown error');
-      setFetchStatus('error');
-    }
-  }, [searchForm, hasApiCondition, dateRangeError, hasDateIncomplete]);
 
-  // ── Fetch more (condition search paging) ───────────────────────────────────
-
-  const handleFetchMore = useCallback(async () => {
-    if (!nextCursor || !hasMore || fetchStatus === 'loading') return;
-
-    setFetchStatus('loading');
-    setFetchError('');
-
-    // 1秒待機（API制限への配慮）
-    await new Promise<void>((r) => setTimeout(r, 1000));
-
-    const body: Record<string, unknown> = {
-      types:  DEFAULT_TYPES,
-      count:  50,
-      cursor: nextCursor,
-    };
-    if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
-    if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
-    if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
-
-    try {
-      const res = await fetch('/api/check-products', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      // Dedup by productNo (keep first occurrence)
+      const seen = new Set<string>();
+      const deduped = allProducts.filter((p) => {
+        if (seen.has(p.productNo)) return false;
+        seen.add(p.productNo);
+        return true;
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(errData.error ?? `HTTP ${res.status}`);
-      }
-      const data = await res.json() as VpsResponse;
-      if (!data.ok) throw new Error('VPS returned ok=false');
 
-      const rawCountMore = (data.products ?? []).length;
-      let newProducts = data.products ?? [];
-
-      // 初回と同じクライアントフィルタを適用
-      const prefix = searchForm.productNoPrefix.trim();
-      if (prefix) newProducts = newProducts.filter((p) => p.productNo.startsWith(prefix));
-      if (searchForm.visible !== 'all') {
-        const wantPublic = searchForm.visible === 'public';
-        newProducts = newProducts.filter((p) => normalizeVisible(p.visible) === wantPublic);
+      // Apply visible filter
+      let filtered = deduped;
+      if (syncVisibleFilter !== 'all') {
+        const wantPublic = syncVisibleFilter === 'public';
+        filtered = deduped.filter((p) => normalizeVisible(p.visible) === wantPublic);
       }
 
-      // 既存との dedup マージ
-      const existingNos = new Set(fetchedProducts.map((p) => p.productNo));
-      const toAdd       = newProducts.filter((p) => !existingNos.has(p.productNo));
-      const combined    = [...fetchedProducts, ...toAdd];
+      const totalFetched       = filtered.length;
+      const incomingProducts   = filtered.map(toMdProduct);
+      const incomingVariations = filtered.flatMap((p) => (p.variations ?? []).map((v) => toMdVariation(v, p)));
 
-      const newPageCount   = pageCount + 1;
-      const cursor         = data.nextUrl ? extractCursor(data.nextUrl) : null;
-      const canFetchMore   = !!cursor && newPageCount < MAX_PAGES && combined.length < MAX_PRODUCTS;
+      const { products: existing, variations: existingVars } = loadExisting();
+      const { products, variations, stats, changeLog } = smartMerge(
+        existing, existingVars, incomingProducts, incomingVariations, updateExisting,
+      );
 
-      setRawFetchCount((prev) => prev + rawCountMore);
-      setFetchedProducts(combined);
-      setSelectedNos((prev) => {
-        const next = new Set(prev);
-        for (const p of toAdd) next.add(p.productNo);
-        return next;
+      onSendToProducts?.(products, variations);
+
+      setFullSyncState({
+        phase: 'done',
+        result: { totalFetched, ...stats, pageCount, paginationStatus, changeLog },
       });
-      setNextCursor(cursor);
-      setPageCount(newPageCount);
-      setHasMore(canFetchMore);
-      setNoMorePages(canFetchMore ? null : cursor ? 'limit' : 'done');
-      setFetchStatus('idle');
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Unknown error');
-      setFetchStatus('error');
+      setFullSyncState({ phase: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
     }
-  }, [nextCursor, hasMore, fetchStatus, fetchedProducts, pageCount, searchForm]);
+  }, [syncVisibleFilter, updateExisting, onSendToProducts]);
 
-  // ── Selection ──────────────────────────────────────────────────────────────
+  // ── Selection (manual mode) ────────────────────────────────────────────────
 
   const toggleProduct = useCallback((no: string) => {
     setSelectedNos((prev) => {
@@ -543,10 +519,10 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     });
   }, []);
 
-  const selectAll    = useCallback(() => setSelectedNos(new Set(fetchedProducts.map((p) => p.productNo))), [fetchedProducts]);
-  const deselectAll  = useCallback(() => setSelectedNos(new Set()), []);
+  const selectAll   = useCallback(() => setSelectedNos(new Set(fetchedProducts.map((p) => p.productNo))), [fetchedProducts]);
+  const deselectAll = useCallback(() => setSelectedNos(new Set()), []);
 
-  // ── Send + auto stock sync ──────────────────────────────────────────────────
+  // ── Send + auto stock sync (manual mode) ───────────────────────────────────
 
   const handleSend = useCallback(async () => {
     const toSend = fetchedProducts.filter((p) => selectedNos.has(p.productNo));
@@ -556,15 +532,19 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setSendResult(null);
 
     const { products: existing, variations: existingVars } = loadExisting();
-    const newProducts   = toSend.map(toMdProduct);
-    const newVariations = toSend.flatMap((p) => (p.variations ?? []).map((v) => toMdVariation(v, p)));
+    const incomingProducts   = toSend.map(toMdProduct);
+    const incomingVariations = toSend.flatMap((p) => (p.variations ?? []).map((v) => toMdVariation(v, p)));
 
-    let mergedProducts   = mergeProducts(existing, newProducts);
-    let mergedVariations = mergeVariations(existingVars, newVariations);
+    const { products: merged, variations: mergedVars, stats } = smartMerge(
+      existing, existingVars, incomingProducts, incomingVariations, updateExisting,
+    );
 
-    // Auto stock sync for selected products only
+    let finalProducts   = merged;
+    let finalVariations = mergedVars;
+    let syncFailed      = false;
+
+    // Auto stock sync for selected products
     const productNos = toSend.map((p) => p.productNo);
-    let syncFailed = false;
     try {
       const res = await fetch('/api/check-stock', {
         method:  'POST',
@@ -575,19 +555,19 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         const data = await res.json() as { ok?: boolean; stock?: Record<string, number> };
         if (data.ok && data.stock) {
           const stock = data.stock;
-          mergedVariations = mergedVariations.map((v) => {
+          finalVariations = finalVariations.map((v) => {
             const skuNorm = v.skuCode.replaceAll('_', '');
             if (!Object.prototype.hasOwnProperty.call(stock, skuNorm)) return v;
             const s = stock[skuNorm];
             return { ...v, actualStock: s, availableStock: s, ecStock: s, stockType: 'actual' as const };
           });
           const stockByProduct: Record<string, number> = {};
-          for (const v of mergedVariations) {
+          for (const v of finalVariations) {
             if (v.actualStock != null && productNos.includes(v.productNo)) {
               stockByProduct[v.productNo] = (stockByProduct[v.productNo] ?? 0) + v.actualStock;
             }
           }
-          mergedProducts = mergedProducts.map((p) => {
+          finalProducts = finalProducts.map((p) => {
             if (!Object.prototype.hasOwnProperty.call(stockByProduct, p.productNo)) return p;
             const s = stockByProduct[p.productNo];
             return { ...p, actualStock: s, availableStock: s, stockType: 'actual' as const };
@@ -602,23 +582,30 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       syncFailed = true;
     }
 
-    const sentProductNos = toSend.map((p) => p.productNo);
     setSentNos((prev) => {
       const next = new Set(prev);
-      for (const no of sentProductNos) next.add(no);
+      for (const no of toSend.map((p) => p.productNo)) next.add(no);
       return next;
     });
-    setSendResult({ count: toSend.length, stockOk: !syncFailed });
+    setSendResult({
+      added:      stats.newProducts,
+      updated:    stats.updatedProducts,
+      skipped:    stats.skippedProducts,
+      skuAdded:   stats.newSkus,
+      skuUpdated: stats.updatedSkus,
+      skuSkipped: stats.skippedSkus,
+      stockOk:    !syncFailed,
+    });
     setSendStatus('idle');
-    onSendToProducts(mergedProducts, mergedVariations);
-  }, [fetchedProducts, selectedNos, onSendToProducts]);
+    onSendToProducts(finalProducts, finalVariations);
+  }, [fetchedProducts, selectedNos, onSendToProducts, updateExisting]);
 
   const handleInputChange = (text: string) => {
     setInputText(text);
     clearFetchState();
   };
 
-  // ── Computed for summary ────────────────────────────────────────────────────
+  // ── Computed (manual mode) ─────────────────────────────────────────────────
 
   const totalSkus    = fetchedProducts.reduce((n, p) => n + (p.variations?.length ?? 0), 0);
   const withImage    = fetchedProducts.filter((p) => !!p.imageUrl).length;
@@ -635,7 +622,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         FutureShop商品取込
       </div>
       <p className={styles.desc}>
-        FutureShopから商品情報を取得し、商品一覧へ反映します。既存データがある場合は更新（上書きマージ）します。
+        FutureShopから商品情報を取得し、商品一覧へ反映します。品番指定は特定商品の即時取得に、全件同期はFutureShop全商品の一括取得に使います。
       </p>
 
       {/* ── Mode tabs ── */}
@@ -649,14 +636,14 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         </button>
         <button
           type="button"
-          className={`${styles.modeTab} ${mode === 'search' ? styles.modeTabActive : ''}`}
-          onClick={() => switchMode('search')}
+          className={`${styles.modeTab} ${mode === 'fullSync' ? styles.modeTabActive : ''}`}
+          onClick={() => switchMode('fullSync')}
         >
-          条件検索
+          全件同期
         </button>
       </div>
 
-      {/* ── Manual mode ── */}
+      {/* ── Manual mode input ── */}
       {mode === 'manual' && (
         <div className={styles.inputArea}>
           <label className={styles.label}>品番（7桁・カンマまたは改行区切り）</label>
@@ -688,84 +675,52 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
         </div>
       )}
 
-      {/* ── Condition search mode ── */}
-      {mode === 'search' && (
+      {/* ── Full sync options ── */}
+      {mode === 'fullSync' && (
         <div className={styles.searchForm}>
+          <p className={styles.searchNote}>
+            FutureShopに登録されている商品を全件取得し、MDツールの商品一覧へ反映します。既存商品は通常スキップしますが、「既存商品も更新する」をONにすると、商品名・画像・URL・公開状態などをFutureShop情報で更新します。
+          </p>
           <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>更新日 From</span>
-            <input
-              type="date"
-              className={styles.searchInput}
-              value={searchForm.dateFrom}
-              onChange={(e) => setSearchForm((f) => ({ ...f, dateFrom: e.target.value }))}
-            />
-          </div>
-          <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>更新日 To</span>
-            <input
-              type="date"
-              className={styles.searchInput}
-              value={searchForm.dateTo}
-              onChange={(e) => setSearchForm((f) => ({ ...f, dateTo: e.target.value }))}
-            />
-          </div>
-          {dateRangeError && (
-            <div className={styles.errorMsg}>{dateRangeError}</div>
-          )}
-          <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>メイングループURLコード</span>
-            <input
-              type="text"
-              className={styles.searchInput}
-              value={searchForm.mainGroupUrl}
-              onChange={(e) => setSearchForm((f) => ({ ...f, mainGroupUrl: e.target.value }))}
-              placeholder="例: tops"
-            />
-          </div>
-          <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>商品番号前方一致（取得後フィルタ）</span>
-            <input
-              type="text"
-              className={styles.searchInput}
-              value={searchForm.productNoPrefix}
-              onChange={(e) => setSearchForm((f) => ({ ...f, productNoPrefix: e.target.value }))}
-              placeholder="例: 1251"
-              maxLength={7}
-            />
-          </div>
-          <div className={styles.searchNote}>
-            FutureShop APIでは前方一致検索はできないため、更新日・グループURL・JANで取得した結果の中から絞り込みます。前方一致がある場合は最大5ページ（250件）まで自動取得します。
-          </div>
-          <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>公開状態（取得結果内で絞り込み）</span>
+            <span className={styles.searchLabel}>公開状態</span>
             <div className={styles.radioGroup}>
               {(['all', 'public', 'private'] as const).map((v) => (
                 <label key={v} className={styles.radioLabel}>
                   <input
                     type="radio"
-                    name="fs-visible"
+                    name="fs-sync-visible"
                     value={v}
-                    checked={searchForm.visible === v}
-                    onChange={() => setSearchForm((f) => ({ ...f, visible: v }))}
+                    checked={syncVisibleFilter === v}
+                    onChange={() => setSyncVisibleFilter(v)}
+                    disabled={fullSyncState.phase === 'loading'}
                   />
                   {v === 'all' ? 'すべて' : v === 'public' ? '公開中' : '非公開'}
                 </label>
               ))}
             </div>
           </div>
-          {hasDateIncomplete && (
-            <div className={styles.errorMsg}>更新日で検索する場合はFrom/Toの両方を入力してください。</div>
-          )}
-          {onlyPrefix && (
-            <div className={styles.errorMsg}>商品番号前方一致だけでは検索できません。更新日From/To・メイングループURLコード・JANコードのいずれかを指定してください。</div>
-          )}
-          {!hasApiCondition && !onlyPrefix && !hasDateIncomplete && (
-            <div className={styles.parsedHint}>更新日またはメイングループURLコードを入力してください</div>
-          )}
         </div>
       )}
 
-      {/* ── Fetch button ── */}
+      {/* ── Shared: update existing checkbox ── */}
+      <div className={styles.updateExistingRow}>
+        <label className={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={updateExisting}
+            onChange={(e) => setUpdateExisting(e.target.checked)}
+            disabled={mode === 'fullSync' && fullSyncState.phase === 'loading'}
+          />
+          既存商品もFutureShop情報で更新する
+        </label>
+        {updateExisting && (
+          <span className={styles.updateExistingNote}>
+            ON: 商品名・画像・価格・URL・公開状態などを最新値で更新します。MD判断・売上・メモは保持されます。
+          </span>
+        )}
+      </div>
+
+      {/* ── Fetch / sync button ── */}
       <div className={styles.btnRow}>
         {mode === 'manual' ? (
           <button
@@ -780,147 +735,162 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
           <button
             type="button"
             className={styles.fetchBtn}
-            onClick={handleSearchFetch}
-            disabled={!hasApiCondition || !!dateRangeError || hasDateIncomplete || fetchStatus === 'loading'}
+            onClick={handleFullSync}
+            disabled={fullSyncState.phase === 'loading'}
           >
-            {fetchStatus === 'loading' ? '検索中...' : '条件で検索'}
+            {fullSyncState.phase === 'loading'
+              ? `${fullSyncState.page}ページ目取得中...`
+              : 'FutureShop商品を全件同期'}
           </button>
         )}
       </div>
 
-      {fetchStatus === 'error' && (
-        <div className={styles.errorMsg}>{fetchError}</div>
-      )}
-
-      {/* ── Filter zero message (API succeeded but no results after client filter) ── */}
-      {mode === 'search' && fetchStatus === 'idle' && rawFetchCount > 0 && fetchedProducts.length === 0 && fetchError === '' && (
-        <div className={styles.filterZeroMsg}>
-          FutureShopから{rawFetchCount}件取得しましたが、絞り込み条件に一致する商品はありませんでした。
-          {searchForm.productNoPrefix.trim() ? ' 商品番号前方一致は取得結果内での絞り込みです。' : ''}
-          条件を広げるか、品番指定で直接入力してください。
-        </div>
-      )}
-
-      {/* ── Fetch summary ── */}
-      {hasSummary && (
-        <div className={styles.fetchSummary}>
-          {fetchedProducts.length > 0 && (
-            <>
-              <span className={styles.summarySuccess}>取得成功: {fetchedProducts.length}品番</span>
-              {mode === 'search' && rawFetchCount > 0 && rawFetchCount !== fetchedProducts.length && (
-                <>
-                  <span className={styles.summaryDot}>·</span>
-                  <span>取得: {rawFetchCount}件 → 絞り込み後: {fetchedProducts.length}件</span>
-                </>
-              )}
-            </>
-          )}
-          {fetchedProducts.length > 0 && (
-            <>
-              <span className={styles.summaryDot}>·</span>
-              <span>SKU数: {totalSkus}件</span>
-              <span className={styles.summaryDot}>·</span>
-              <span>画像あり: {withImage}件</span>
-              {withPreorder > 0 && (
-                <>
-                  <span className={styles.summaryDot}>·</span>
-                  <span>予約販売あり: {withPreorder}件</span>
-                </>
-              )}
-              {withPlanned > 0 && (
-                <>
-                  <span className={styles.summaryDot}>·</span>
-                  <span>予定在庫あり: {withPlanned}件</span>
-                </>
-              )}
-            </>
-          )}
-          {failedNos.length > 0 && (
-            <>
-              {fetchedProducts.length > 0 && <span className={styles.summaryDot}>·</span>}
-              <span className={styles.summaryFail}>
-                取得失敗: {failedNos.length}品番（{failedNos.join(', ')}）
-              </span>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Product list with selection ── */}
-      {fetchedProducts.length > 0 && (
+      {/* ── Manual mode: errors / summary / product list ── */}
+      {mode === 'manual' && (
         <>
-          <div className={styles.selectionBar}>
-            <button type="button" className={styles.selectionBtn} onClick={selectAll}>全選択</button>
-            <button type="button" className={styles.selectionBtn} onClick={deselectAll}>全解除</button>
-            <span className={styles.selectionCount}>
-              選択: {selectedNos.size}件 / {fetchedProducts.length}件
-            </span>
-          </div>
+          {fetchStatus === 'error' && (
+            <div className={styles.errorMsg}>{fetchError}</div>
+          )}
 
-          <div className={styles.previewList}>
-            {fetchedProducts.map((p) => (
-              <ProductPreviewCard
-                key={p.productNo}
-                product={p}
-                selected={selectedNos.has(p.productNo)}
-                sent={sentNos.has(p.productNo)}
-                onToggle={() => toggleProduct(p.productNo)}
-              />
-            ))}
-          </div>
-
-          {/* ── Pagination (condition search only) ── */}
-          {mode === 'search' && (hasMore || noMorePages !== null) && (
-            <div className={styles.paginationRow}>
-              {hasMore && (
-                <button
-                  type="button"
-                  className={styles.fetchMoreBtn}
-                  onClick={handleFetchMore}
-                  disabled={fetchStatus === 'loading'}
-                >
-                  {fetchStatus === 'loading'
-                    ? '取得中...'
-                    : `次の50件を取得（${pageCount + 1} / ${MAX_PAGES}ページ目）`}
-                </button>
+          {hasSummary && (
+            <div className={styles.fetchSummary}>
+              {fetchedProducts.length > 0 && (
+                <>
+                  <span className={styles.summarySuccess}>取得成功: {fetchedProducts.length}品番</span>
+                  <span className={styles.summaryDot}>·</span>
+                  <span>SKU数: {totalSkus}件</span>
+                  <span className={styles.summaryDot}>·</span>
+                  <span>画像あり: {withImage}件</span>
+                  {withPreorder > 0 && (
+                    <><span className={styles.summaryDot}>·</span><span>予約販売あり: {withPreorder}件</span></>
+                  )}
+                  {withPlanned > 0 && (
+                    <><span className={styles.summaryDot}>·</span><span>予定在庫あり: {withPlanned}件</span></>
+                  )}
+                </>
               )}
-              {noMorePages === 'limit' && (
-                <div className={styles.hasMoreWarning}>
-                  取得上限（{MAX_PAGES}ページ / {MAX_PRODUCTS}件）に達しました。条件を絞ってください。
-                </div>
-              )}
-              {noMorePages === 'done' && pageCount > 1 && (
-                <div className={styles.paginationDone}>
-                  全 {fetchedProducts.length}件を取得しました
-                </div>
+              {failedNos.length > 0 && (
+                <>
+                  {fetchedProducts.length > 0 && <span className={styles.summaryDot}>·</span>}
+                  <span className={styles.summaryFail}>
+                    取得失敗: {failedNos.length}品番（{failedNos.join(', ')}）
+                  </span>
+                </>
               )}
             </div>
           )}
 
-          <div className={styles.sendRow}>
-            <button
-              type="button"
-              className={styles.sendBtn}
-              onClick={handleSend}
-              disabled={
-                !onSendToProducts ||
-                selectedNos.size === 0 ||
-                sendStatus === 'syncing'
-              }
-            >
-              {sendStatus === 'syncing'
-                ? '在庫同期中...'
-                : `選択した${selectedNos.size}件を商品一覧へ反映`}
-            </button>
-            {sendStatus === 'syncing' && (
-              <span className={styles.sendDesc}>FutureShopから在庫を取得しています...</span>
-            )}
-            {sendResult && (
-              <span className={sendResult.stockOk ? styles.sentDone : styles.syncErrorMsg}>
-                {sendResult.count}件を反映しました{!sendResult.stockOk && '（在庫同期は失敗）'}
-              </span>
-            )}
-          </div>
+          {fetchedProducts.length > 0 && (
+            <>
+              <div className={styles.selectionBar}>
+                <button type="button" className={styles.selectionBtn} onClick={selectAll}>全選択</button>
+                <button type="button" className={styles.selectionBtn} onClick={deselectAll}>全解除</button>
+                <span className={styles.selectionCount}>
+                  選択: {selectedNos.size}件 / {fetchedProducts.length}件
+                </span>
+              </div>
+
+              <div className={styles.previewList}>
+                {fetchedProducts.map((p) => (
+                  <ProductPreviewCard
+                    key={p.productNo}
+                    product={p}
+                    selected={selectedNos.has(p.productNo)}
+                    sent={sentNos.has(p.productNo)}
+                    onToggle={() => toggleProduct(p.productNo)}
+                  />
+                ))}
+              </div>
+
+              <div className={styles.sendRow}>
+                <button
+                  type="button"
+                  className={styles.sendBtn}
+                  onClick={handleSend}
+                  disabled={!onSendToProducts || selectedNos.size === 0 || sendStatus === 'syncing'}
+                >
+                  {sendStatus === 'syncing'
+                    ? '在庫同期中...'
+                    : `選択した${selectedNos.size}件を商品一覧へ反映`}
+                </button>
+                {sendStatus === 'syncing' && (
+                  <span className={styles.sendDesc}>FutureShopから在庫を取得しています...</span>
+                )}
+                {sendResult && (
+                  <div className={styles.sendResultBlock}>
+                    <span className={sendResult.stockOk ? styles.sentDone : styles.syncErrorMsg}>
+                      反映完了{!sendResult.stockOk && '（在庫同期は失敗）'}
+                    </span>
+                    <span className={styles.sendResultDetail}>
+                      新規追加: {sendResult.added}品番 / 更新: {sendResult.updated}品番 / スキップ: {sendResult.skipped}品番
+                    </span>
+                    <span className={styles.sendResultDetail}>
+                      SKU追加: {sendResult.skuAdded}件 / SKU更新: {sendResult.skuUpdated}件 / SKUスキップ: {sendResult.skuSkipped}件
+                    </span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ── Full sync mode: result ── */}
+      {mode === 'fullSync' && (
+        <>
+          {fullSyncState.phase === 'error' && (
+            <div className={styles.errorMsg}>同期エラー: {fullSyncState.message}</div>
+          )}
+
+          {fullSyncState.phase === 'done' && (() => {
+            const r = fullSyncState.result;
+            return (
+              <div className={styles.fullSyncResult}>
+                <div className={styles.fullSyncResultTitle}>
+                  全件同期完了
+                  {r.paginationStatus === 'limit_reached' && (
+                    <span className={styles.fullSyncLimitBadge}>50ページ上限・暫定値</span>
+                  )}
+                  {r.paginationStatus === 'complete' && (
+                    <span className={styles.fullSyncDoneBadge}>全{r.pageCount}ページ取得済み</span>
+                  )}
+                </div>
+                <div className={styles.fullSyncGrid}>
+                  {[
+                    ['取得商品数', `${r.totalFetched}品番`],
+                    ['新規追加',   `${r.newProducts}品番`],
+                    ['更新',       `${r.updatedProducts}品番`],
+                    ['変更なしスキップ', `${r.skippedProducts}品番`],
+                    ['SKU追加',    `${r.newSkus}件`],
+                    ['SKU更新',    `${r.updatedSkus}件`],
+                    ['SKU変更なしスキップ', `${r.skippedSkus}件`],
+                    ['取得ページ数', `${r.pageCount}ページ`],
+                  ].map(([label, value]) => (
+                    <div key={label} className={styles.fullSyncItem}>
+                      <span className={styles.fullSyncLabel}>{label}</span>
+                      <span className={styles.fullSyncValue}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+                {r.paginationStatus === 'limit_reached' && (
+                  <p className={styles.fullSyncWarning}>
+                    50ページ上限に達したため暫定値です。全データを取得するにはページング上限の拡張が必要です。
+                  </p>
+                )}
+                {r.changeLog.length > 0 && (
+                  <div className={styles.changeLogBlock}>
+                    <div className={styles.changeLogTitle}>変更ログ（最大20件）</div>
+                    {r.changeLog.map((log) => (
+                      <div key={log.productNo} className={styles.changeLogRow}>
+                        <span className={styles.changeLogNo}>{log.productNo}:</span>
+                        <span>{log.changes.join(' / ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
@@ -940,6 +910,7 @@ function ProductPreviewCard({
   sent: boolean;
   onToggle: () => void;
 }) {
+  const visNorm = normalizeVisible(p.visible);
   return (
     <div className={`${styles.previewCard} ${selected ? styles.previewCardSelected : ''}`}>
       <label className={styles.previewCheck}>
@@ -966,17 +937,13 @@ function ProductPreviewCard({
         <div className={styles.previewMeta}>
           <span>{Number(p.unitPrice).toLocaleString()}円</span>
           <span className={styles.metaDivider}>·</span>
-          <span className={styles.metaVisible} data-visible={p.visible || undefined}>
-            {p.visible ? '公開中' : '非公開'}
+          <span className={styles.metaVisible} data-visible={visNorm ?? 'unknown'}>
+            {visNorm === true ? '公開中' : visNorm === false ? '非公開' : '不明'}
           </span>
           <span className={styles.metaDivider}>·</span>
           <span>URLコード: {p.url}</span>
-          {p.hasPreorder && (
-            <span className={styles.metaBadge} data-type="preorder">予約販売</span>
-          )}
-          {p.hasPlannedStock && (
-            <span className={styles.metaBadge} data-type="planned">予定在庫</span>
-          )}
+          {p.hasPreorder && <span className={styles.metaBadge} data-type="preorder">予約販売</span>}
+          {p.hasPlannedStock && <span className={styles.metaBadge} data-type="planned">予定在庫</span>}
         </div>
         <div className={styles.previewUrl}>
           <a href={p.uri} target="_blank" rel="noopener noreferrer" className={styles.uriLink}>

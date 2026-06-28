@@ -36,12 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const requestTypes = Array.isArray(types) && types.length > 0 ? types : DEFAULT_TYPES;
 
-  const isSearchMode = !productNos && (
-    updateDateStart !== undefined ||
-    updateDateEnd !== undefined ||
-    mainGroupUrl !== undefined ||
-    janCode !== undefined
-  );
+  const isSearchMode = !Array.isArray(productNos);
 
   if (!isSearchMode) {
     if (!Array.isArray(productNos)) {

@@ -31,10 +31,30 @@ export type SalesSyncStatus =
   | { state: 'syncing'; page: number }
   | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; pageCount: number; paginationStatus: 'complete' | 'limit_reached' }
   | { state: 'error'; message: string };
+
+export type FsUpdateStatus =
+  | { state: 'idle' }
+  | { state: 'syncing'; done: number; total: number }
+  | { state: 'success'; targetCount: number; updatedProducts: number; unchangedProducts: number; updatedSkus: number }
+  | { state: 'error'; message: string };
+
 import styles from './App.module.css';
 
 const MD_PRODUCTS_KEY   = 'ecTodo.mdProducts';
 const MD_VARIATIONS_KEY = 'ecTodo.mdVariations';
+const MD_FS_SYNC_AT_KEY = 'ecTodo.lastFsSyncAt';
+
+const FS_PRODUCT_UPDATE_KEYS: (keyof MdProduct)[] = [
+  'productName', 'category', 'imageUrl', 'price', 'productUrl', 'productUrlCode',
+  'visible', 'hasPreorder', 'hasPlannedStock', 'importSource', 'skuCount',
+];
+
+const FS_VARIATION_UPDATE_KEYS: (keyof MdVariation)[] = [
+  'productName', 'color', 'size', 'colorBranchNo', 'colorName',
+  'sizeBranchNo', 'sizeName', 'janCode', 'price',
+  'actualStock', 'availableStock', 'ecStock', 'stockType',
+  'productUrl', 'imageUrl', 'visible', 'hasPreorder', 'hasPlannedStock',
+];
 
 function loadMdProductsFromStorage(): { products: MdProduct[]; savedAt: string | null } {
   try {
@@ -81,6 +101,10 @@ function App() {
   const [mdVariations, setMdVariations] = useState<MdVariation[]>([]);
   const [syncStatus, setSyncStatus] = useState<StockSyncStatus>({ state: 'idle' });
   const [salesSyncStatus, setSalesSyncStatus] = useState<SalesSyncStatus>({ state: 'idle' });
+  const [fsUpdateStatus, setFsUpdateStatus] = useState<FsUpdateStatus>({ state: 'idle' });
+  const [lastFsSyncAt, setLastFsSyncAt] = useState<string | null>(() => {
+    try { return localStorage.getItem(MD_FS_SYNC_AT_KEY); } catch { return null; }
+  });
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
@@ -285,6 +309,146 @@ function App() {
     }
   }, [mdProducts, mdVariations, mdProductsSavedAt]);
 
+  const updateFsProducts = useCallback(async () => {
+    if (mdProducts.length === 0) return;
+    const productNos = mdProducts.map((p) => p.productNo);
+    const CHUNK = 50;
+    const total = productNos.length;
+    setFsUpdateStatus({ state: 'syncing', done: 0, total });
+
+    type VpsVariation = {
+      skuCode: string; colorBranchNo: string; colorName: string;
+      sizeBranchNo: string; sizeName: string; janCode: string;
+      stockCount: number | null; price?: number | null;
+    };
+    type VpsProduct = {
+      productNo: string; url: string; uri: string; name: string;
+      unitPrice: number | string;
+      visible: boolean | string | null; imageUrl: string;
+      variations: VpsVariation[];
+      hasPreorder: boolean; hasPlannedStock: boolean;
+    };
+    type VpsResponse = { ok: boolean; products: VpsProduct[] };
+
+    function normalizeVisibleLocal(v: unknown): boolean | undefined {
+      if (v === true  || v === 'true')  return true;
+      if (v === false || v === 'false') return false;
+      return undefined;
+    }
+
+    const allFsProducts: VpsProduct[] = [];
+    try {
+      for (let i = 0; i < productNos.length; i += CHUNK) {
+        if (i > 0) await new Promise<void>((r) => setTimeout(r, 1100));
+        const chunk = productNos.slice(i, i + CHUNK);
+        const res = await fetch('/api/check-products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productNos: chunk, types: ['variation', 'image', 'preorder', 'plannedStock'] }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json() as VpsResponse;
+        if (!data.ok) throw new Error('VPS returned ok=false');
+        allFsProducts.push(...(data.products ?? []));
+        setFsUpdateStatus({ state: 'syncing', done: Math.min(i + CHUNK, total), total });
+      }
+
+      const fsMap = new Map(allFsProducts.map((p) => [p.productNo, p]));
+
+      let updatedProducts = 0;
+      let unchangedProducts = 0;
+      let updatedSkus = 0;
+
+      const newProducts = mdProducts.map((p) => {
+        const fp = fsMap.get(p.productNo);
+        if (!fp) { unchangedProducts++; return p; }
+        const patch: Partial<MdProduct> = {};
+        const incoming: Partial<MdProduct> = {
+          productName: fp.name,
+          imageUrl: fp.imageUrl || undefined,
+          price: isNaN(Number(fp.unitPrice)) ? null : Number(fp.unitPrice),
+          productUrl: fp.uri,
+          productUrlCode: fp.url,
+          visible: normalizeVisibleLocal(fp.visible),
+          hasPreorder: fp.hasPreorder,
+          hasPlannedStock: fp.hasPlannedStock,
+          importSource: 'futureshop',
+          skuCount: fp.variations.length,
+        };
+        let changed = false;
+        for (const key of FS_PRODUCT_UPDATE_KEYS) {
+          const n = (incoming as Record<string, unknown>)[key];
+          if (n === undefined) continue;
+          if ((p as Record<string, unknown>)[key] !== n) {
+            (patch as Record<string, unknown>)[key] = n;
+            changed = true;
+          }
+        }
+        if (changed) { updatedProducts++; return { ...p, ...patch }; }
+        unchangedProducts++;
+        return p;
+      });
+
+      const fsVarMap = new Map<string, VpsProduct>();
+      for (const fp of allFsProducts) {
+        for (const v of fp.variations ?? []) {
+          fsVarMap.set(`${fp.productNo}__${v.skuCode}`, fp);
+        }
+      }
+      const fsVarDetailMap = new Map<string, VpsVariation>();
+      for (const fp of allFsProducts) {
+        for (const v of fp.variations ?? []) {
+          fsVarDetailMap.set(`${fp.productNo}__${v.skuCode}`, v);
+        }
+      }
+
+      const newVariations = mdVariations.map((v) => {
+        const key = `${v.productNo}__${v.skuCode}`;
+        const fv  = fsVarDetailMap.get(key);
+        const fp  = fsVarMap.get(key);
+        if (!fv || !fp) return v;
+        const varPrice = fv.price != null ? Number(fv.price) : (isNaN(Number(fp.unitPrice)) ? null : Number(fp.unitPrice));
+        const incoming: Partial<MdVariation> = {
+          productName:   fp.name,
+          colorBranchNo: fv.colorBranchNo || undefined,
+          colorName:     fv.colorName     || undefined,
+          sizeBranchNo:  fv.sizeBranchNo  || undefined,
+          sizeName:      fv.sizeName      || undefined,
+          janCode:       fv.janCode       || undefined,
+          price:         isNaN(varPrice ?? NaN) ? null : varPrice,
+          productUrl:    fp.uri,
+          imageUrl:      fp.imageUrl || undefined,
+          visible:       normalizeVisibleLocal(fp.visible),
+          hasPreorder:   fp.hasPreorder,
+          hasPlannedStock: fp.hasPlannedStock,
+        };
+        const patch: Partial<MdVariation> = {};
+        let changed = false;
+        for (const k of FS_VARIATION_UPDATE_KEYS) {
+          const n = (incoming as Record<string, unknown>)[k];
+          if (n === undefined) continue;
+          if ((v as Record<string, unknown>)[k] !== n) {
+            (patch as Record<string, unknown>)[k] = n;
+            changed = true;
+          }
+        }
+        if (changed) { updatedSkus++; return { ...v, ...patch }; }
+        return v;
+      });
+
+      const now = new Date().toISOString();
+      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: newProducts, savedAt: mdProductsSavedAt ?? now }));
+      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: newVariations, savedAt: now }));
+      localStorage.setItem(MD_FS_SYNC_AT_KEY, now);
+      setMdProducts(newProducts);
+      setMdVariations(newVariations);
+      setLastFsSyncAt(now);
+      setFsUpdateStatus({ state: 'success', targetCount: total, updatedProducts, unchangedProducts, updatedSkus });
+    } catch (err) {
+      setFsUpdateStatus({ state: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  }, [mdProducts, mdVariations, mdProductsSavedAt]);
+
   const activeCount = tasks.filter((t) => !t.completed).length;
   const doneCount = tasks.filter((t) => t.completed).length;
   const displayTasks = applySearch(applyFilter(sortTasks(tasks, sortBy), filter), search);
@@ -354,6 +518,9 @@ function App() {
               syncStatus={syncStatus}
               onSyncSales={syncSales}
               salesSyncStatus={salesSyncStatus}
+              onUpdateFsProducts={updateFsProducts}
+              fsUpdateStatus={fsUpdateStatus}
+              lastFsSyncAt={lastFsSyncAt}
             />
           )}
 
