@@ -10,8 +10,8 @@ type StockSyncStatus =
 
 type SalesSyncStatus =
   | { state: 'idle' }
-  | { state: 'syncing' }
-  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; hasNextUrl: boolean }
+  | { state: 'syncing'; page: number }
+  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; pageCount: number; paginationStatus: 'complete' | 'limit_reached' }
   | { state: 'error'; message: string };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1232,7 +1232,7 @@ function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSe
             onClick={handleSync}
             disabled={!hasData || isSyncing || !onSyncSales || !dateFrom || !dateTo}
           >
-            {isSyncing ? '同期中...' : '売上同期'}
+            {status.state === 'syncing' ? `${status.page}ページ目取得中...` : '売上同期'}
           </button>
           {!hasData && (
             <span className={styles.salesSyncNote}>
@@ -1274,10 +1274,19 @@ function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSe
                   <span className={styles.salesResultValue}>{status.cancelledOrders.toLocaleString()}件</span>
                 </div>
               )}
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>取得ページ数</span>
+                <span className={styles.salesResultValue}>{status.pageCount}ページ</span>
+              </div>
             </div>
-            {status.hasNextUrl && (
+            {status.paginationStatus === 'limit_reached' && (
               <p className={styles.salesNextUrlWarning}>
-                100件以上あるため、売上同期結果は1ページ目のみの暫定値です。正確な集計には次フェーズのページング対応が必要です。
+                5ページ上限に達したため暫定値です。全データを取得するにはページング上限の拡張が必要です。
+              </p>
+            )}
+            {status.paginationStatus === 'complete' && status.pageCount > 1 && (
+              <p className={styles.salesCompleteNote}>
+                全{status.pageCount}ページ取得済み（全件反映済み）
               </p>
             )}
           </div>

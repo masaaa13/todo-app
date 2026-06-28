@@ -995,6 +995,16 @@
   margin: 0;
 }
 
+.salesCompleteNote {
+  font-size: 0.72rem;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  padding: 4px 10px;
+  margin: 0;
+}
+
 .salesSyncError {
   font-size: 0.76rem;
   color: var(--color-danger);

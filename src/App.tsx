@@ -28,8 +28,8 @@ export type StockSyncStatus =
 
 export type SalesSyncStatus =
   | { state: 'idle' }
-  | { state: 'syncing' }
-  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; hasNextUrl: boolean }
+  | { state: 'syncing'; page: number }
+  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; pageCount: number; paginationStatus: 'complete' | 'limit_reached' }
   | { state: 'error'; message: string };
 import styles from './App.module.css';
 
@@ -173,84 +173,115 @@ function App() {
 
   const syncSales = useCallback(async (dateFrom: string, dateTo: string) => {
     if (mdProducts.length === 0) return;
-    setSalesSyncStatus({ state: 'syncing' });
+
+    type PageData = {
+      ok?: boolean;
+      orderCount?: number;
+      lineCount?: number;
+      totalSalesQty?: number;
+      totalSalesAmount?: number;
+      nextUrl?: string | null;
+      skuSales?: { skuCode: string; salesQty: number; salesAmount: number }[];
+      productSales?: { productNo: string; salesQty: number; salesAmount: number }[];
+      excluded?: { cancelledOrders?: number };
+    };
+
+    const MAX_PAGES = 5;
+    const skuMap  = new Map<string, { skuCode: string; salesQty: number; salesAmount: number }>();
+    const prodMap = new Map<string, { productNo: string; salesQty: number; salesAmount: number }>();
+    let accOrderCount  = 0;
+    let accLineCount   = 0;
+    let accSalesQty    = 0;
+    let accSalesAmount = 0;
+    let accCancelled   = 0;
+    let cursor: string | null = null;
+    let pageCount = 0;
+    let paginationStatus: 'complete' | 'limit_reached' = 'complete';
+
+    setSalesSyncStatus({ state: 'syncing', page: 1 });
+
     try {
-      const res = await fetch('/api/check-orders', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      while (pageCount < MAX_PAGES) {
+        const body: Record<string, string> = {
           orderDateStart: `${dateFrom}T00:00:00`,
           orderDateEnd:   `${dateTo}T23:59:59`,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as {
-        ok?: boolean;
-        orderCount?: number;
-        lineCount?: number;
-        totalSalesQty?: number;
-        totalSalesAmount?: number;
-        nextUrl?: string | null;
-        skuSales?: { skuCode: string; salesQty: number; salesAmount: number }[];
-        productSales?: { productNo: string; salesQty: number; salesAmount: number }[];
-        excluded?: { cancelledOrders?: number };
-      };
-      if (!data.ok) throw new Error('API returned ok=false');
+        };
+        if (cursor) body.cursor = cursor;
 
-      const productSalesMap = new Map(
-        (data.productSales ?? []).map((p) => [p.productNo, p]),
-      );
-      const skuSalesMap = new Map(
-        (data.skuSales ?? []).map((s) => [s.skuCode, s]),
-      );
+        const res = await fetch('/api/check-orders', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json() as PageData;
+        if (!data.ok) throw new Error('API returned ok=false');
+
+        pageCount++;
+        accOrderCount  += data.orderCount  ?? 0;
+        accLineCount   += data.lineCount   ?? 0;
+        accSalesQty    += data.totalSalesQty    ?? 0;
+        accSalesAmount += data.totalSalesAmount ?? 0;
+        accCancelled   += data.excluded?.cancelledOrders ?? 0;
+
+        for (const s of (data.skuSales ?? [])) {
+          const prev = skuMap.get(s.skuCode);
+          if (prev) { prev.salesQty += s.salesQty; prev.salesAmount += s.salesAmount; }
+          else { skuMap.set(s.skuCode, { skuCode: s.skuCode, salesQty: s.salesQty, salesAmount: s.salesAmount }); }
+        }
+        for (const p of (data.productSales ?? [])) {
+          const prev = prodMap.get(p.productNo);
+          if (prev) { prev.salesQty += p.salesQty; prev.salesAmount += p.salesAmount; }
+          else { prodMap.set(p.productNo, { productNo: p.productNo, salesQty: p.salesQty, salesAmount: p.salesAmount }); }
+        }
+
+        if (!data.nextUrl) { paginationStatus = 'complete'; break; }
+
+        let nextCursor: string | null = null;
+        try { nextCursor = new URL(data.nextUrl).searchParams.get('cursor'); } catch { /* invalid URL */ }
+        if (!nextCursor) { paginationStatus = 'complete'; break; }
+
+        if (pageCount >= MAX_PAGES) { paginationStatus = 'limit_reached'; break; }
+
+        cursor = nextCursor;
+        setSalesSyncStatus({ state: 'syncing', page: pageCount + 1 });
+        await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+      }
+
+      const productSalesMap = new Map(Array.from(prodMap.values()).map((p) => [p.productNo, p]));
+      const skuSalesMap     = new Map(Array.from(skuMap.values()).map((s) => [s.skuCode, s]));
 
       const updatedProducts = mdProducts.map((p) => {
         const sales = productSalesMap.get(p.productNo);
         if (!sales) return p;
-        return {
-          ...p,
-          salesQty30d:        sales.salesQty,
-          salesAmount30d:     sales.salesAmount,
-          monthlySalesQty:    sales.salesQty,
-          monthlySalesAmount: sales.salesAmount,
-        };
+        return { ...p, salesQty30d: sales.salesQty, salesAmount30d: sales.salesAmount, monthlySalesQty: sales.salesQty, monthlySalesAmount: sales.salesAmount };
       });
-
       const updatedVariations = mdVariations.map((v) => {
         const normalSku = v.skuCode.replaceAll('_', '');
         const sales = skuSalesMap.get(normalSku);
         if (!sales) return v;
-        return {
-          ...v,
-          salesQty30d:        sales.salesQty,
-          salesAmount30d:     sales.salesAmount,
-          monthlySalesQty:    sales.salesQty,
-          monthlySalesAmount: sales.salesAmount,
-        };
+        return { ...v, salesQty30d: sales.salesQty, salesAmount30d: sales.salesAmount, monthlySalesQty: sales.salesQty, monthlySalesAmount: sales.salesAmount };
       });
 
       const now = new Date().toISOString();
       localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
       localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
-
       setMdProducts(updatedProducts);
       setMdVariations(updatedVariations);
       setSalesSyncStatus({
-        state:        'success',
-        orderCount:   data.orderCount   ?? 0,
-        lineCount:    data.lineCount    ?? 0,
-        totalSalesQty:    data.totalSalesQty    ?? 0,
-        totalSalesAmount: data.totalSalesAmount ?? 0,
-        skuCount:     (data.skuSales    ?? []).length,
-        productCount: (data.productSales ?? []).length,
-        cancelledOrders: data.excluded?.cancelledOrders ?? 0,
-        hasNextUrl:   !!data.nextUrl,
+        state:            'success',
+        orderCount:       accOrderCount,
+        lineCount:        accLineCount,
+        totalSalesQty:    accSalesQty,
+        totalSalesAmount: accSalesAmount,
+        skuCount:         skuMap.size,
+        productCount:     prodMap.size,
+        cancelledOrders:  accCancelled,
+        pageCount,
+        paginationStatus,
       });
     } catch (err) {
-      setSalesSyncStatus({
-        state:   'error',
-        message: err instanceof Error ? err.message : 'Unknown error',
-      });
+      setSalesSyncStatus({ state: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
     }
   }, [mdProducts, mdVariations, mdProductsSavedAt]);
 
