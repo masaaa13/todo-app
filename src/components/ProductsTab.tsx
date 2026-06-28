@@ -104,7 +104,7 @@ function csvEscape(v: string): string {
 }
 
 function downloadMdProductsCsv(products: MdProduct[]): void {
-  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,30日販売数,30日売上,月販売数,月売上';
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上';
   const rows = products.map((p) => {
     const cols = [
       p.productNo,
@@ -137,7 +137,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
 }
 
 function downloadMdVariationsCsv(variations: MdVariation[]): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,30日販売数,30日売上,月販売数,月売上';
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上';
   const rows = variations.map((v) => {
     const cols = [
       v.productNo,
@@ -773,12 +773,12 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   // 売上データ
   { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty7d)}</span> },
   { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty14d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty14d)}</span> },
-  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
+  { key: 'salesQty30d',       label: '期間販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
   { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount14d)}</span> },
-  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount30d)}</span> },
-  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.monthlySalesQty ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesQty)}</span> },
-  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.monthlySalesAmount ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesAmount)}</span> },
+  { key: 'salesAmount30d',    label: '期間売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount30d)}</span> },
+  { key: 'monthlySalesQty',   label: '月間販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.monthlySalesQty ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesQty)}</span> },
+  { key: 'monthlySalesAmount',label: '月間売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.monthlySalesAmount ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesAmount)}</span> },
   // 販促・予算管理
   { key: 'budgetGroup',       label: '予算グループ',   defaultVisible: false, defaultWidth: 110, render: (p) => <span className={styles.naCell}>{p.budgetGroup ?? '準備中'}</span> },
   { key: 'collaborationName', label: 'コラボ名',       defaultVisible: false, defaultWidth: 130, render: (p) => <span className={styles.naCell}>{p.collaborationName ?? '準備中'}</span> },
@@ -812,12 +812,12 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   // 売上データ
   { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty7d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty7d)}</span> },
   { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty14d)}</span> },
-  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty30d)}</span> },
+  { key: 'salesQty30d',       label: '期間販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty30d)}</span> },
   { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount14d)}</span> },
-  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.salesAmount30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount30d)}</span> },
-  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.monthlySalesQty ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesQty)}</span> },
-  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.monthlySalesAmount ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesAmount)}</span> },
+  { key: 'salesAmount30d',    label: '期間売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.salesAmount30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount30d)}</span> },
+  { key: 'monthlySalesQty',   label: '月間販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.monthlySalesQty ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesQty)}</span> },
+  { key: 'monthlySalesAmount',label: '月間売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.monthlySalesAmount ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesAmount)}</span> },
   // 販促
   { key: 'collaborationName', label: 'コラボ名',       defaultVisible: false, defaultWidth: 130, render: (v) => <span className={styles.naCell}>{v.collaborationName ?? '準備中'}</span> },
   { key: 'salesType',         label: '販売区分',       defaultVisible: false, defaultWidth: 110, render: (v) => <span className={styles.naCell}>{fmtSalesType(v.salesType)}</span> },
@@ -1277,7 +1277,7 @@ function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSe
             </div>
             {status.hasNextUrl && (
               <p className={styles.salesNextUrlWarning}>
-                100件以上ある可能性があります。次フェーズでページング対応します。
+                100件以上あるため、売上同期結果は1ページ目のみの暫定値です。正確な集計には次フェーズのページング対応が必要です。
               </p>
             )}
           </div>
