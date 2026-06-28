@@ -268,11 +268,10 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   // Derived
   const parsedInput       = parseInput(inputText);
   const hasValid          = parsedInput.valid.length > 0;
-  const hasApiCondition = !!(
-    searchForm.dateFrom ||
-    searchForm.dateTo ||
-    searchForm.mainGroupUrl.trim()
-  );
+  const hasDateRange      = !!(searchForm.dateFrom && searchForm.dateTo);
+  const hasDateIncomplete = !!((searchForm.dateFrom && !searchForm.dateTo) || (!searchForm.dateFrom && searchForm.dateTo));
+  const hasApiCondition   = !!(hasDateRange || searchForm.mainGroupUrl.trim());
+  const onlyPrefix        = !!(searchForm.productNoPrefix.trim() && !hasApiCondition);
 
   let dateRangeError = '';
   if (searchForm.dateFrom && searchForm.dateTo) {
@@ -345,7 +344,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
   // ── Condition search fetch ──────────────────────────────────────────────────
 
   const handleSearchFetch = useCallback(async () => {
-    if (!hasApiCondition || dateRangeError) return;
+    if (!hasApiCondition || dateRangeError || hasDateIncomplete) return;
 
     setFetchStatus('loading');
     setFetchError('');
@@ -361,50 +360,106 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
     setSentNos(new Set());
     setSendResult(null);
 
-    const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
-    if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
-    if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
-    if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
+    const prefix       = searchForm.productNoPrefix.trim();
+    const useAutoPaging = !!prefix;
+
+    const buildBody = (cursor?: string | null): Record<string, unknown> => {
+      const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
+      if (searchForm.dateFrom)            body.updateDateStart = `${searchForm.dateFrom}T00:00:00`;
+      if (searchForm.dateTo)              body.updateDateEnd   = `${searchForm.dateTo}T23:59:59`;
+      if (searchForm.mainGroupUrl.trim()) body.mainGroupUrl    = searchForm.mainGroupUrl.trim();
+      if (cursor)                         body.cursor          = cursor;
+      return body;
+    };
 
     try {
-      const res = await fetch('/api/check-products', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(errData.error ?? `HTTP ${res.status}`);
+      if (!useAutoPaging) {
+        // Single page fetch (no prefix)
+        const res = await fetch('/api/check-products', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildBody()),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(errData.error ?? `HTTP ${res.status}`);
+        }
+        const data = await res.json() as VpsResponse;
+        if (!data.ok) throw new Error('VPS returned ok=false');
+
+        const rawCount = (data.products ?? []).length;
+        let products = data.products ?? [];
+
+        if (searchForm.visible !== 'all') {
+          const wantPublic = searchForm.visible === 'public';
+          products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
+        }
+
+        const cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
+        const canFetchMore = !!cursor && products.length < MAX_PRODUCTS;
+        setRawFetchCount(rawCount);
+        setFetchedProducts(products);
+        setSelectedNos(new Set(products.map((p) => p.productNo)));
+        setNextCursor(cursor);
+        setPageCount(1);
+        setHasMore(canFetchMore);
+        setNoMorePages(canFetchMore ? null : data.nextUrl ? 'limit' : null);
+        setFetchStatus('idle');
+      } else {
+        // Auto-paging: fetch up to MAX_PAGES to collect prefix matches
+        let allRaw: VpsProduct[] = [];
+        let cursor: string | null = null;
+        let page = 0;
+        let reachedEnd = false;
+
+        while (page < MAX_PAGES && allRaw.length < MAX_PRODUCTS) {
+          if (page > 0) await new Promise<void>((r) => setTimeout(r, 1000));
+          const res = await fetch('/api/check-products', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildBody(cursor)),
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({})) as { error?: string };
+            throw new Error(errData.error ?? `HTTP ${res.status}`);
+          }
+          const data = await res.json() as VpsResponse;
+          if (!data.ok) throw new Error('VPS returned ok=false');
+
+          allRaw = [...allRaw, ...(data.products ?? [])];
+          page++;
+          cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
+          if (!cursor) { reachedEnd = true; break; }
+        }
+
+        const rawCount = allRaw.length;
+
+        // Dedup by productNo then apply filters
+        const seen = new Set<string>();
+        let products = allRaw
+          .filter((p) => { if (seen.has(p.productNo)) return false; seen.add(p.productNo); return true; })
+          .filter((p) => p.productNo.startsWith(prefix));
+
+        if (searchForm.visible !== 'all') {
+          const wantPublic = searchForm.visible === 'public';
+          products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
+        }
+
+        const hitLimit = !reachedEnd;
+        setRawFetchCount(rawCount);
+        setFetchedProducts(products);
+        setSelectedNos(new Set(products.map((p) => p.productNo)));
+        setNextCursor(cursor);
+        setPageCount(page);
+        setHasMore(false);
+        setNoMorePages(hitLimit ? 'limit' : page > 1 ? 'done' : null);
+        setFetchStatus('idle');
       }
-      const data = await res.json() as VpsResponse;
-      if (!data.ok) throw new Error('VPS returned ok=false');
-
-      const rawCount = (data.products ?? []).length;
-      let products = data.products ?? [];
-
-      // Client-side filters (not sent to API)
-      const prefix = searchForm.productNoPrefix.trim();
-      if (prefix) products = products.filter((p) => p.productNo.startsWith(prefix));
-      if (searchForm.visible !== 'all') {
-        const wantPublic = searchForm.visible === 'public';
-        products = products.filter((p) => normalizeVisible(p.visible) === wantPublic);
-      }
-
-      const cursor = data.nextUrl ? extractCursor(data.nextUrl) : null;
-      const canFetchMore = !!cursor && products.length < MAX_PRODUCTS;
-      setRawFetchCount(rawCount);
-      setFetchedProducts(products);
-      setSelectedNos(new Set(products.map((p) => p.productNo)));
-      setNextCursor(cursor);
-      setPageCount(1);
-      setHasMore(canFetchMore);
-      setNoMorePages(canFetchMore ? null : data.nextUrl ? 'limit' : null);
-      setFetchStatus('idle');
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error');
       setFetchStatus('error');
     }
-  }, [searchForm, hasApiCondition, dateRangeError]);
+  }, [searchForm, hasApiCondition, dateRangeError, hasDateIncomplete]);
 
   // ── Fetch more (condition search paging) ───────────────────────────────────
 
@@ -668,15 +723,18 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
             />
           </div>
           <div className={styles.searchRow}>
-            <span className={styles.searchLabel}>商品番号（取得結果内で絞り込み）</span>
+            <span className={styles.searchLabel}>商品番号前方一致（取得後フィルタ）</span>
             <input
               type="text"
               className={styles.searchInput}
               value={searchForm.productNoPrefix}
               onChange={(e) => setSearchForm((f) => ({ ...f, productNoPrefix: e.target.value }))}
-              placeholder="例: 1266"
+              placeholder="例: 1251"
               maxLength={7}
             />
+          </div>
+          <div className={styles.searchNote}>
+            FutureShop APIでは前方一致検索はできないため、更新日・グループURL・JANで取得した結果の中から絞り込みます。前方一致がある場合は最大5ページ（250件）まで自動取得します。
           </div>
           <div className={styles.searchRow}>
             <span className={styles.searchLabel}>公開状態（取得結果内で絞り込み）</span>
@@ -695,7 +753,13 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
               ))}
             </div>
           </div>
-          {!hasApiCondition && (
+          {hasDateIncomplete && (
+            <div className={styles.errorMsg}>更新日で検索する場合はFrom/Toの両方を入力してください。</div>
+          )}
+          {onlyPrefix && (
+            <div className={styles.errorMsg}>商品番号前方一致だけでは検索できません。更新日From/To・メイングループURLコード・JANコードのいずれかを指定してください。</div>
+          )}
+          {!hasApiCondition && !onlyPrefix && !hasDateIncomplete && (
             <div className={styles.parsedHint}>更新日またはメイングループURLコードを入力してください</div>
           )}
         </div>
@@ -717,7 +781,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
             type="button"
             className={styles.fetchBtn}
             onClick={handleSearchFetch}
-            disabled={!hasApiCondition || !!dateRangeError || fetchStatus === 'loading'}
+            disabled={!hasApiCondition || !!dateRangeError || hasDateIncomplete || fetchStatus === 'loading'}
           >
             {fetchStatus === 'loading' ? '検索中...' : '条件で検索'}
           </button>
@@ -726,6 +790,15 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
 
       {fetchStatus === 'error' && (
         <div className={styles.errorMsg}>{fetchError}</div>
+      )}
+
+      {/* ── Filter zero message (API succeeded but no results after client filter) ── */}
+      {mode === 'search' && fetchStatus === 'idle' && rawFetchCount > 0 && fetchedProducts.length === 0 && fetchError === '' && (
+        <div className={styles.filterZeroMsg}>
+          FutureShopから{rawFetchCount}件取得しましたが、絞り込み条件に一致する商品はありませんでした。
+          {searchForm.productNoPrefix.trim() ? ' 商品番号前方一致は取得結果内での絞り込みです。' : ''}
+          条件を広げるか、品番指定で直接入力してください。
+        </div>
       )}
 
       {/* ── Fetch summary ── */}
