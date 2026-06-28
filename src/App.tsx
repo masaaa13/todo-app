@@ -186,7 +186,7 @@ function App() {
       excluded?: { cancelledOrders?: number };
     };
 
-    const MAX_PAGES = 5;
+    const MAX_PAGES = 20;
     const skuMap  = new Map<string, { skuCode: string; salesQty: number; salesAmount: number }>();
     const prodMap = new Map<string, { productNo: string; salesQty: number; salesAmount: number }>();
     let accOrderCount  = 0;

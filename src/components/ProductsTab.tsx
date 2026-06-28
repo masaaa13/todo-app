@@ -1234,6 +1234,11 @@ function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSe
           >
             {status.state === 'syncing' ? `${status.page}ページ目取得中...` : '売上同期'}
           </button>
+          {(status.state === 'idle' || status.state === 'syncing') && hasData && (
+            <span className={styles.salesSyncNote}>
+              最大20ページ取得するため、最大20秒程度かかる場合があります
+            </span>
+          )}
           {!hasData && (
             <span className={styles.salesSyncNote}>
               商品データがありません。先に商品登録CSVタブから取り込んでください。
@@ -1281,7 +1286,7 @@ function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSe
             </div>
             {status.paginationStatus === 'limit_reached' && (
               <p className={styles.salesNextUrlWarning}>
-                5ページ上限に達したため暫定値です。全データを取得するにはページング上限の拡張が必要です。
+                20ページ上限に達したため暫定値です。全データを取得するにはページング上限の拡張が必要です。
               </p>
             )}
             {status.paginationStatus === 'complete' && status.pageCount > 1 && (
