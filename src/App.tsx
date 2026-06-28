@@ -25,6 +25,12 @@ export type StockSyncStatus =
   | { state: 'syncing' }
   | { state: 'success'; skuCount: number; productCount: number }
   | { state: 'error'; message: string };
+
+export type SalesSyncStatus =
+  | { state: 'idle' }
+  | { state: 'syncing' }
+  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; hasNextUrl: boolean }
+  | { state: 'error'; message: string };
 import styles from './App.module.css';
 
 const MD_PRODUCTS_KEY   = 'ecTodo.mdProducts';
@@ -74,6 +80,7 @@ function App() {
   const [mdProductsSavedAt, setMdProductsSavedAt] = useState<string | null>(null);
   const [mdVariations, setMdVariations] = useState<MdVariation[]>([]);
   const [syncStatus, setSyncStatus] = useState<StockSyncStatus>({ state: 'idle' });
+  const [salesSyncStatus, setSalesSyncStatus] = useState<SalesSyncStatus>({ state: 'idle' });
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
@@ -99,6 +106,7 @@ function App() {
     setMdProductsSavedAt(null);
     setMdVariations([]);
     setSyncStatus({ state: 'idle' });
+    setSalesSyncStatus({ state: 'idle' });
   }, []);
 
   const syncStocks = useCallback(async () => {
@@ -162,6 +170,89 @@ function App() {
       setSyncStatus({ state: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
     }
   }, [mdVariations, mdProducts, mdProductsSavedAt]);
+
+  const syncSales = useCallback(async (dateFrom: string, dateTo: string) => {
+    if (mdProducts.length === 0) return;
+    setSalesSyncStatus({ state: 'syncing' });
+    try {
+      const res = await fetch('/api/check-orders', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderDateStart: `${dateFrom}T00:00:00`,
+          orderDateEnd:   `${dateTo}T23:59:59`,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as {
+        ok?: boolean;
+        orderCount?: number;
+        lineCount?: number;
+        totalSalesQty?: number;
+        totalSalesAmount?: number;
+        nextUrl?: string | null;
+        skuSales?: { skuCode: string; salesQty: number; salesAmount: number }[];
+        productSales?: { productNo: string; salesQty: number; salesAmount: number }[];
+        excluded?: { cancelledOrders?: number };
+      };
+      if (!data.ok) throw new Error('API returned ok=false');
+
+      const productSalesMap = new Map(
+        (data.productSales ?? []).map((p) => [p.productNo, p]),
+      );
+      const skuSalesMap = new Map(
+        (data.skuSales ?? []).map((s) => [s.skuCode, s]),
+      );
+
+      const updatedProducts = mdProducts.map((p) => {
+        const sales = productSalesMap.get(p.productNo);
+        if (!sales) return p;
+        return {
+          ...p,
+          salesQty30d:        sales.salesQty,
+          salesAmount30d:     sales.salesAmount,
+          monthlySalesQty:    sales.salesQty,
+          monthlySalesAmount: sales.salesAmount,
+        };
+      });
+
+      const updatedVariations = mdVariations.map((v) => {
+        const normalSku = v.skuCode.replaceAll('_', '');
+        const sales = skuSalesMap.get(normalSku);
+        if (!sales) return v;
+        return {
+          ...v,
+          salesQty30d:        sales.salesQty,
+          salesAmount30d:     sales.salesAmount,
+          monthlySalesQty:    sales.salesQty,
+          monthlySalesAmount: sales.salesAmount,
+        };
+      });
+
+      const now = new Date().toISOString();
+      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
+      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+
+      setMdProducts(updatedProducts);
+      setMdVariations(updatedVariations);
+      setSalesSyncStatus({
+        state:        'success',
+        orderCount:   data.orderCount   ?? 0,
+        lineCount:    data.lineCount    ?? 0,
+        totalSalesQty:    data.totalSalesQty    ?? 0,
+        totalSalesAmount: data.totalSalesAmount ?? 0,
+        skuCount:     (data.skuSales    ?? []).length,
+        productCount: (data.productSales ?? []).length,
+        cancelledOrders: data.excluded?.cancelledOrders ?? 0,
+        hasNextUrl:   !!data.nextUrl,
+      });
+    } catch (err) {
+      setSalesSyncStatus({
+        state:   'error',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }, [mdProducts, mdVariations, mdProductsSavedAt]);
 
   const activeCount = tasks.filter((t) => !t.completed).length;
   const doneCount = tasks.filter((t) => t.completed).length;
@@ -230,6 +321,8 @@ function App() {
               onClearProducts={clearMdProductsStorage}
               onSyncStocks={syncStocks}
               syncStatus={syncStatus}
+              onSyncSales={syncSales}
+              salesSyncStatus={salesSyncStatus}
             />
           )}
 

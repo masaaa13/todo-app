@@ -8,6 +8,12 @@ type StockSyncStatus =
   | { state: 'success'; skuCount: number; productCount: number }
   | { state: 'error'; message: string };
 
+type SalesSyncStatus =
+  | { state: 'idle' }
+  | { state: 'syncing' }
+  | { state: 'success'; orderCount: number; lineCount: number; totalSalesQty: number; totalSalesAmount: number; skuCount: number; productCount: number; cancelledOrders: number; hasNextUrl: boolean }
+  | { state: 'error'; message: string };
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'product' | 'variation';
@@ -98,7 +104,7 @@ function csvEscape(v: string): string {
 }
 
 function downloadMdProductsCsv(products: MdProduct[]): void {
-  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL';
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,30日販売数,30日売上,月販売数,月売上';
   const rows = products.map((p) => {
     const cols = [
       p.productNo,
@@ -112,6 +118,10 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
       p.status,
       p.nextAction,
       p.productUrl ?? '',
+      p.salesQty30d    != null ? String(p.salesQty30d)    : '',
+      p.salesAmount30d != null ? String(p.salesAmount30d) : '',
+      p.monthlySalesQty    != null ? String(p.monthlySalesQty)    : '',
+      p.monthlySalesAmount != null ? String(p.monthlySalesAmount) : '',
     ];
     return cols.map(csvEscape).join(',');
   });
@@ -127,7 +137,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
 }
 
 function downloadMdVariationsCsv(variations: MdVariation[]): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL';
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,30日販売数,30日売上,月販売数,月売上';
   const rows = variations.map((v) => {
     const cols = [
       v.productNo,
@@ -143,6 +153,10 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
       v.status,
       v.nextAction,
       v.productUrl ?? '',
+      v.salesQty30d    != null ? String(v.salesQty30d)    : '',
+      v.salesAmount30d != null ? String(v.salesAmount30d) : '',
+      v.monthlySalesQty    != null ? String(v.monthlySalesQty)    : '',
+      v.monthlySalesAmount != null ? String(v.monthlySalesAmount) : '',
     ];
     return cols.map(csvEscape).join(',');
   });
@@ -759,11 +773,11 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   // 売上データ
   { key: 'salesQty7d',        label: '7日販売数',      defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty7d)}</span> },
   { key: 'salesQty14d',       label: '14日販売数',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty14d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty14d)}</span> },
-  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
+  { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.salesQty30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesQty30d)}</span> },
   { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount7d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount14d)}</span> },
-  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: false, defaultWidth: 100, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount30d)}</span> },
-  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: false, defaultWidth: 90,  render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesQty)}</span> },
+  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.salesAmount30d ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.salesAmount30d)}</span> },
+  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (p) => p.monthlySalesQty ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesQty)}</span> },
   { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (p) => p.monthlySalesAmount ?? null, render: (p) => <span className={styles.numCell}>{fmtNum(p.monthlySalesAmount)}</span> },
   // 販促・予算管理
   { key: 'budgetGroup',       label: '予算グループ',   defaultVisible: false, defaultWidth: 110, render: (p) => <span className={styles.naCell}>{p.budgetGroup ?? '準備中'}</span> },
@@ -801,9 +815,9 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'salesQty30d',       label: '30日販売数',     defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.salesQty30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesQty30d)}</span> },
   { key: 'salesAmount7d',     label: '7日売上',        defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount7d)}</span> },
   { key: 'salesAmount14d',    label: '14日売上',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount14d)}</span> },
-  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount30d)}</span> },
-  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: false, defaultWidth: 90,  render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesQty)}</span> },
-  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesAmount)}</span> },
+  { key: 'salesAmount30d',    label: '30日売上',       defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.salesAmount30d ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.salesAmount30d)}</span> },
+  { key: 'monthlySalesQty',   label: '月販売数',       defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => v.monthlySalesQty ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesQty)}</span> },
+  { key: 'monthlySalesAmount',label: '月売上',         defaultVisible: true,  defaultWidth: 100, sortable: true, sortValue: (v) => v.monthlySalesAmount ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.monthlySalesAmount)}</span> },
   // 販促
   { key: 'collaborationName', label: 'コラボ名',       defaultVisible: false, defaultWidth: 130, render: (v) => <span className={styles.naCell}>{v.collaborationName ?? '準備中'}</span> },
   { key: 'salesType',         label: '販売区分',       defaultVisible: false, defaultWidth: 110, render: (v) => <span className={styles.naCell}>{fmtSalesType(v.salesType)}</span> },
@@ -1161,6 +1175,124 @@ function NextPhaseCard() {
   );
 }
 
+// ── Sales sync section ────────────────────────────────────────────────────────
+
+type SalesSyncSectionProps = {
+  onSyncSales?: (dateFrom: string, dateTo: string) => Promise<void>;
+  salesSyncStatus?: SalesSyncStatus;
+  hasData: boolean;
+};
+
+function SalesSyncSection({ onSyncSales, salesSyncStatus, hasData }: SalesSyncSectionProps) {
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const defaultFrom = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo,   setDateTo]   = useState(todayStr);
+
+  const status    = salesSyncStatus ?? { state: 'idle' as const };
+  const isSyncing = status.state === 'syncing';
+
+  const handleSync = useCallback(async () => {
+    if (!onSyncSales || !hasData || isSyncing || !dateFrom || !dateTo) return;
+    await onSyncSales(dateFrom, dateTo);
+  }, [onSyncSales, hasData, isSyncing, dateFrom, dateTo]);
+
+  return (
+    <div className={styles.salesSyncSection}>
+      <div className={styles.salesSyncHeader}>
+        <span className={styles.salesSyncTitle}>売上同期</span>
+        <span className={styles.salesSyncDesc}>FutureShop受注データからSKU別販売数・売上金額を反映します</span>
+      </div>
+      <div className={styles.salesSyncBody}>
+        <div className={styles.salesSyncRow}>
+          <label className={styles.salesSyncLabel}>注文日 From</label>
+          <input
+            type="date"
+            className={styles.salesSyncInput}
+            value={dateFrom}
+            max={dateTo}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <label className={styles.salesSyncLabel}>To</label>
+          <input
+            type="date"
+            className={styles.salesSyncInput}
+            value={dateTo}
+            min={dateFrom}
+            max={todayStr}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+          <button
+            className={styles.salesSyncBtn}
+            onClick={handleSync}
+            disabled={!hasData || isSyncing || !onSyncSales || !dateFrom || !dateTo}
+          >
+            {isSyncing ? '同期中...' : '売上同期'}
+          </button>
+          {!hasData && (
+            <span className={styles.salesSyncNote}>
+              商品データがありません。先に商品登録CSVタブから取り込んでください。
+            </span>
+          )}
+        </div>
+
+        {status.state === 'success' && (
+          <div className={styles.salesSyncResult}>
+            <div className={styles.salesSyncResultGrid}>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>受注件数</span>
+                <span className={styles.salesResultValue}>{status.orderCount.toLocaleString()}</span>
+              </div>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>明細行数</span>
+                <span className={styles.salesResultValue}>{status.lineCount.toLocaleString()}</span>
+              </div>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>総販売点数</span>
+                <span className={styles.salesResultValue}>{status.totalSalesQty.toLocaleString()}</span>
+              </div>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>総売上金額</span>
+                <span className={styles.salesResultValue}>¥{status.totalSalesAmount.toLocaleString()}</span>
+              </div>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>SKU数</span>
+                <span className={styles.salesResultValue}>{status.skuCount.toLocaleString()}</span>
+              </div>
+              <div className={styles.salesResultItem}>
+                <span className={styles.salesResultLabel}>品番数</span>
+                <span className={styles.salesResultValue}>{status.productCount.toLocaleString()}</span>
+              </div>
+              {status.cancelledOrders > 0 && (
+                <div className={styles.salesResultItem}>
+                  <span className={styles.salesResultLabel}>キャンセル除外</span>
+                  <span className={styles.salesResultValue}>{status.cancelledOrders.toLocaleString()}件</span>
+                </div>
+              )}
+            </div>
+            {status.hasNextUrl && (
+              <p className={styles.salesNextUrlWarning}>
+                100件以上ある可能性があります。次フェーズでページング対応します。
+              </p>
+            )}
+          </div>
+        )}
+
+        {status.state === 'error' && (
+          <div className={styles.salesSyncError}>
+            同期エラー: {status.message.slice(0, 80)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 type ProductsTabProps = {
@@ -1170,6 +1302,8 @@ type ProductsTabProps = {
   onClearProducts?: () => void;
   onSyncStocks?: () => void;
   syncStatus?: StockSyncStatus;
+  onSyncSales?: (dateFrom: string, dateTo: string) => Promise<void>;
+  salesSyncStatus?: SalesSyncStatus;
 };
 
 export function ProductsTab({
@@ -1179,6 +1313,8 @@ export function ProductsTab({
   onClearProducts,
   onSyncStocks,
   syncStatus,
+  onSyncSales,
+  salesSyncStatus,
 }: ProductsTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('product');
   const [keyword, setKeyword] = useState('');
@@ -1338,6 +1474,12 @@ export function ProductsTab({
         onSyncStocks={onSyncStocks}
         syncStatus={syncStatus}
         hasVariations={hasVariations}
+      />
+
+      <SalesSyncSection
+        onSyncSales={onSyncSales}
+        salesSyncStatus={salesSyncStatus}
+        hasData={isReal}
       />
 
       <div className={styles.viewControlRow}>

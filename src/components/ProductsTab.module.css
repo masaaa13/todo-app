@@ -871,3 +871,136 @@
 .visiblePill[data-v="private"] { color: var(--color-text-sub); }
 .visiblePill[data-v="unknown"] { color: var(--color-text-sub); opacity: 0.5; }
 
+/* ── Sales sync section ── */
+.salesSyncSection {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.salesSyncHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.salesSyncTitle {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.salesSyncDesc {
+  font-size: 0.75rem;
+  color: var(--color-text-sub);
+}
+
+.salesSyncBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.salesSyncRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.salesSyncLabel {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-sub);
+  white-space: nowrap;
+}
+
+.salesSyncInput {
+  border: 1.5px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.salesSyncInput:focus { border-color: var(--color-accent); }
+
+.salesSyncBtn {
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.salesSyncBtn:hover:not(:disabled) { background: #1d4ed8; }
+.salesSyncBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.salesSyncNote {
+  font-size: 0.73rem;
+  color: var(--color-text-sub);
+}
+
+.salesSyncResult {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+}
+
+.salesSyncResultGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.salesResultItem {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.salesResultLabel {
+  font-size: 0.72rem;
+  color: #166534;
+}
+
+.salesResultValue {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #15803d;
+}
+
+.salesNextUrlWarning {
+  font-size: 0.72rem;
+  color: #92400e;
+  background: #fef9ee;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  margin: 0;
+}
+
+.salesSyncError {
+  font-size: 0.76rem;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
