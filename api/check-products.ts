@@ -16,6 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const {
     productNos,
+    mode,
     updateDateStart,
     updateDateEnd,
     mainGroupUrl,
@@ -25,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     types,
   } = req.body as {
     productNos?: unknown;
+    mode?: unknown;
     updateDateStart?: unknown;
     updateDateEnd?: unknown;
     mainGroupUrl?: unknown;
@@ -36,7 +38,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const requestTypes = Array.isArray(types) && types.length > 0 ? types : DEFAULT_TYPES;
 
-  const isSearchMode = !Array.isArray(productNos);
+  // mode='all' or no productNos array → search/full-scan mode
+  const isSearchMode = mode === 'all' || !Array.isArray(productNos);
 
   if (!isSearchMode) {
     if (!Array.isArray(productNos)) {
@@ -66,15 +69,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Build request body for VPS
   const requestBody = isSearchMode
     ? {
-        updateDateStart: typeof updateDateStart === 'string' ? updateDateStart : undefined,
-        updateDateEnd:   typeof updateDateEnd   === 'string' ? updateDateEnd   : undefined,
-        mainGroupUrl:    typeof mainGroupUrl    === 'string' ? mainGroupUrl    : undefined,
-        janCode:         typeof janCode         === 'string' ? janCode         : undefined,
-        count:           typeof count           === 'number' ? count           : 50,
-        cursor:          typeof cursor          === 'string' ? cursor          : undefined,
-        types:           requestTypes,
+        // mode='all': send mode flag and paging params only
+        // condition search: send optional filter params
+        ...(mode === 'all'
+          ? { mode: 'all' }
+          : {
+              updateDateStart: typeof updateDateStart === 'string' ? updateDateStart : undefined,
+              updateDateEnd:   typeof updateDateEnd   === 'string' ? updateDateEnd   : undefined,
+              mainGroupUrl:    typeof mainGroupUrl    === 'string' ? mainGroupUrl    : undefined,
+              janCode:         typeof janCode         === 'string' ? janCode         : undefined,
+            }),
+        count:  typeof count  === 'number' ? count  : 50,
+        cursor: typeof cursor === 'string' ? cursor : undefined,
+        types:  requestTypes,
       }
     : { productNos, types: requestTypes };
 
@@ -89,12 +99,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!upstream.ok) {
-      return res.status(502).json({ error: 'Upstream error', status: upstream.status });
+      const upstreamText = await upstream.text().catch(() => '');
+      let upstreamDetail: unknown = upstreamText || null;
+      try { upstreamDetail = JSON.parse(upstreamText); } catch { /* keep as text */ }
+      return res.status(502).json({
+        error:          'Upstream error',
+        upstreamStatus: upstream.status,
+        detail:         upstreamDetail,
+      });
     }
 
     const data = await upstream.json() as Record<string, unknown>;
     return res.status(200).json(data);
-  } catch {
-    return res.status(500).json({ error: 'Internal Server Error' });
+  } catch (err) {
+    return res.status(500).json({
+      error:  'Internal Server Error',
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 }

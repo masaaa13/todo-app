@@ -49,6 +49,12 @@ type VpsResponse = {
   warning?: string;
 };
 
+type VpsErrorResponse = {
+  error?: string;
+  upstreamStatus?: number;
+  detail?: unknown;
+};
+
 function extractCursor(nextUrl: string): string | null {
   try { return new URL(nextUrl).searchParams.get('cursor'); }
   catch { return null; }
@@ -172,7 +178,7 @@ function unitPriceNum(p: VpsProduct): number | null {
 
 function toMdProduct(p: VpsProduct): MdProduct {
   return {
-    productNo:       p.productNo,
+    productNo:       String(p.productNo),
     productName:     p.name,
     category:        inferCategory(p.name),
     status:          'FutureShop取込済み',
@@ -193,7 +199,7 @@ function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
   const stock    = v.stockCount ?? null;
   const varPrice = v.price != null ? Number(v.price) : unitPriceNum(p);
   return {
-    productNo:       p.productNo,
+    productNo:       String(p.productNo),
     productName:     p.name,
     skuCode:         v.skuCode,
     color:           v.colorName || undefined,
@@ -278,32 +284,33 @@ function smartMerge(
   incomingVars: MdVariation[],
   updateExisting: boolean,
 ): MergeOutput {
-  const exMap    = new Map(existing.map((p) => [p.productNo, p]));
-  const varKey   = (v: MdVariation) => `${v.productNo}__${v.skuCode}`;
+  const exMap    = new Map(existing.map((p) => [String(p.productNo), p]));
+  const varKey   = (v: MdVariation) => `${String(v.productNo)}__${v.skuCode}`;
   const exVarMap = new Map(existingVars.map((v) => [varKey(v), v]));
 
-  const resultProd = new Map(existing.map((p) => [p.productNo, p]));
+  const resultProd = new Map(existing.map((p) => [String(p.productNo), p]));
   const resultVar  = new Map(existingVars.map((v) => [varKey(v), v]));
 
   const stats = { newProducts: 0, updatedProducts: 0, skippedProducts: 0, newSkus: 0, updatedSkus: 0, skippedSkus: 0 };
   const changeLog: SyncChangeLog[] = [];
 
   for (const p of incoming) {
-    const ex = exMap.get(p.productNo);
+    const key = String(p.productNo);
+    const ex  = exMap.get(key);
     if (!ex) {
-      resultProd.set(p.productNo, p);
+      resultProd.set(key, p);
       stats.newProducts++;
     } else if (updateExisting) {
       const changes = detectProductChanges(ex, p);
       if (changes.length > 0) {
         const patch: Partial<MdProduct> = {};
-        for (const key of FS_PRODUCT_UPDATE_KEYS) {
-          const n = (p as Record<string, unknown>)[key];
-          if (n !== undefined) (patch as Record<string, unknown>)[key] = n;
+        for (const fk of FS_PRODUCT_UPDATE_KEYS) {
+          const n = (p as Record<string, unknown>)[fk];
+          if (n !== undefined) (patch as Record<string, unknown>)[fk] = n;
         }
-        resultProd.set(p.productNo, { ...ex, ...patch });
+        resultProd.set(key, { ...ex, ...patch });
         stats.updatedProducts++;
-        if (changeLog.length < 20) changeLog.push({ productNo: p.productNo, changes });
+        if (changeLog.length < 20) changeLog.push({ productNo: key, changes });
       } else {
         stats.skippedProducts++;
       }
@@ -446,7 +453,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       let paginationStatus: 'complete' | 'limit_reached' = 'complete';
 
       while (pageCount < MAX_FULL_SYNC_PAGES) {
-        const body: Record<string, unknown> = { types: DEFAULT_TYPES, count: 50 };
+        const body: Record<string, unknown> = { mode: 'all', types: DEFAULT_TYPES, count: 50 };
         if (cursor) body.cursor = cursor;
 
         const res = await fetch('/api/check-products', {
@@ -455,8 +462,14 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
           body: JSON.stringify(body),
         });
         if (!res.ok) {
-          const errData = await res.json().catch(() => ({})) as { error?: string };
-          throw new Error(errData.error ?? `HTTP ${res.status}`);
+          const errData = await res.json().catch(() => ({})) as VpsErrorResponse;
+          const statusPart = errData.upstreamStatus
+            ? ` (HTTP ${errData.upstreamStatus})`
+            : ` (HTTP ${res.status})`;
+          const detailPart = errData.detail != null
+            ? `\ndetail: ${typeof errData.detail === 'object' ? JSON.stringify(errData.detail) : String(errData.detail)}`
+            : '';
+          throw new Error(`${errData.error ?? 'エラー'}${statusPart}${detailPart}`);
         }
         const data = await res.json() as VpsResponse;
         if (!data.ok) throw new Error('VPS returned ok=false');
@@ -476,8 +489,9 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       // Dedup by productNo (keep first occurrence)
       const seen = new Set<string>();
       const deduped = allProducts.filter((p) => {
-        if (seen.has(p.productNo)) return false;
-        seen.add(p.productNo);
+        const no = String(p.productNo);
+        if (seen.has(no)) return false;
+        seen.add(no);
         return true;
       });
 

@@ -182,6 +182,7 @@ export default defineConfig({
               try {
                 const parsed = JSON.parse(body) as {
                   productNos?: unknown;
+                  mode?: unknown;
                   updateDateStart?: unknown;
                   updateDateEnd?: unknown;
                   mainGroupUrl?: unknown;
@@ -190,12 +191,13 @@ export default defineConfig({
                   cursor?: unknown;
                   types?: unknown;
                 };
-                const { productNos, updateDateStart, updateDateEnd, mainGroupUrl, janCode, count, cursor } = parsed;
+                const { productNos, mode, updateDateStart, updateDateEnd, mainGroupUrl, janCode, count, cursor } = parsed;
                 const types = Array.isArray(parsed.types) && parsed.types.length > 0
                   ? parsed.types
                   : ['variation', 'image', 'comment', 'preorder', 'plannedStock'];
 
-                const isSearchMode = !Array.isArray(productNos);
+                // mode='all' or no productNos array → search/full-scan mode
+                const isSearchMode = mode === 'all' || !Array.isArray(productNos);
 
                 if (!isSearchMode) {
                   if (!Array.isArray(productNos) || productNos.length === 0 || productNos.length > 50) {
@@ -211,7 +213,19 @@ export default defineConfig({
                 }
 
                 const requestBody = isSearchMode
-                  ? { updateDateStart, updateDateEnd, mainGroupUrl, janCode, count: typeof count === 'number' ? count : 50, cursor, types }
+                  ? {
+                      ...(mode === 'all'
+                        ? { mode: 'all' }
+                        : {
+                            updateDateStart: typeof updateDateStart === 'string' ? updateDateStart : undefined,
+                            updateDateEnd:   typeof updateDateEnd   === 'string' ? updateDateEnd   : undefined,
+                            mainGroupUrl:    typeof mainGroupUrl    === 'string' ? mainGroupUrl    : undefined,
+                            janCode:         typeof janCode         === 'string' ? janCode         : undefined,
+                          }),
+                      count:  typeof count  === 'number' ? count  : 50,
+                      cursor: typeof cursor === 'string' ? cursor : undefined,
+                      types,
+                    }
                   : { productNos, types };
 
                 const upstream = await fetch(`${proxyBase}/check-products`, {
@@ -223,12 +237,28 @@ export default defineConfig({
                   body: JSON.stringify(requestBody),
                 });
 
+                if (!upstream.ok) {
+                  const upstreamText = await upstream.text().catch(() => '');
+                  let upstreamDetail: unknown = upstreamText || null;
+                  try { upstreamDetail = JSON.parse(upstreamText); } catch { /* keep as text */ }
+                  res.writeHead(502, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    error:          'Upstream error',
+                    upstreamStatus: upstream.status,
+                    detail:         upstreamDetail,
+                  }));
+                  return;
+                }
+
                 const data = await upstream.json() as Record<string, unknown>;
-                res.writeHead(upstream.ok ? 200 : 502, { 'Content-Type': 'application/json' });
+                res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(data));
-              } catch {
+              } catch (err) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Internal Server Error' }));
+                res.end(JSON.stringify({
+                  error:  'Internal Server Error',
+                  detail: err instanceof Error ? err.message : String(err),
+                }));
               }
             })();
           });
