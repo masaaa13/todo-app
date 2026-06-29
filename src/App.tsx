@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { useAuth } from './hooks/useAuth';
 import { useTasks } from './hooks/useTasks';
 import { useReminder } from './hooks/useReminder';
@@ -602,6 +603,7 @@ function App() {
         </main>
 
       </div>
+      <Analytics />
     </div>
   );
 }
