@@ -14,6 +14,7 @@ import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
 import { ImportTab } from './components/ImportTab';
 import { LoginGate, loadAuth, clearAuth } from './components/LoginGate';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
@@ -602,6 +603,7 @@ function App() {
         </main>
 
       </div>
+      <SpeedInsights />
     </div>
   );
 }
