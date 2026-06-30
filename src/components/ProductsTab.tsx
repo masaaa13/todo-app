@@ -182,7 +182,7 @@ function candidateConditionText(
   type: 'hot' | 'dead',
   rules: CandidateRuleSettings,
 ): string {
-  const fixed = '固定条件：公開中のみ・ノベルティ/特典系除外';
+  const fixed = '';
   if (type === 'hot') {
     return `${fixed} / 在庫${rules.hotMinStock}点以上 / 期間販売数${rules.hotMinSalesQty}点以上`;
   }
