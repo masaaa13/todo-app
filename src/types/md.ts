@@ -1,14 +1,14 @@
 export type MdProduct = {
   productNo: string;
-  productName?: string;
-  category?: string;
+  productName: string;
+  category: string;
   releaseDate?: string;
   skuCount?: number;
   ecStock?: number | null;
   recentSales?: number | null;
   sellThroughRate?: number | null;
-  status?: string;
-  nextAction?: string;
+  status: string;
+  nextAction: string;
   imageUrl?: string;
 
   // 在庫区分
@@ -50,14 +50,14 @@ export type MdProduct = {
 
 export type MdVariation = {
   productNo: string;
-  productName: string;
+  productName?: string;
   skuCode: string;
   color?: string;
   size?: string;
-  category: string;
+  category?: string;
   releaseDate?: string;
-  status: string;
-  nextAction: string;
+  status?: string;
+  nextAction?: string;
   ecStock?: number | null;
   recentSales?: number | null;
   sellThroughRate?: number | null;

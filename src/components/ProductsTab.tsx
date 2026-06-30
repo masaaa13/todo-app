@@ -129,7 +129,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
       p.monthlySalesQty    != null ? String(p.monthlySalesQty)    : '',
       p.monthlySalesAmount != null ? String(p.monthlySalesAmount) : '',
     ];
-    return cols.map(csvEscape).join(',');
+    return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
   const content = [header, ...rows].join('\r\n');
   const bom = '﻿';
@@ -164,7 +164,7 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
       v.monthlySalesQty    != null ? String(v.monthlySalesQty)    : '',
       v.monthlySalesAmount != null ? String(v.monthlySalesAmount) : '',
     ];
-    return cols.map(csvEscape).join(',');
+    return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
   const content = [header, ...rows].join('\r\n');
   const bom = '﻿';
@@ -816,9 +816,9 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'recentSales',       label: '直近売上',       defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.status, render: (v) => <StatusPill status={v.status} /> },
-  { key: 'nextAction',        label: '次アクション',   defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction} /> },
-  { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (v) => <ProductThumbnail imageUrl={v.imageUrl} alt={v.productName} /> },
+  { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.status ?? '', render: (v) => <StatusPill status={v.status ?? 'FutureShop取込済み'} /> },
+  { key: 'nextAction',        label: '次アクション',   defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction ?? '在庫確認'} /> },
+  { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (v) => <ProductThumbnail imageUrl={v.imageUrl} alt={v.productName ?? v.productNo} /> },
   // 在庫区分
   { key: 'stockType',         label: '在庫区分',       defaultVisible: false, defaultWidth: 100, render: (v) => <span className={styles.naCell}>{fmtStockType(v.stockType)}</span> },
   { key: 'actualStock',       label: '実在庫',         defaultVisible: false, defaultWidth: 90,  sortable: true, sortValue: (v) => v.actualStock ?? null, render: (v) => <span className={styles.numCell}>{fmtNum(v.actualStock)}</span> },
@@ -1507,7 +1507,7 @@ export function ProductsTab({
     return variations.filter((v) => {
       if (kw) {
         const hit = [v.productNo, v.productName, v.skuCode, v.skuCode.replaceAll('_', ''), v.color ?? '', v.size ?? '']
-          .some((s) => s.toLowerCase().includes(kw));
+          .some((s) => (s ?? '').toLowerCase().includes(kw));
         if (!hit) return false;
       }
       if (varCategory && v.category !== varCategory) return false;
@@ -1627,8 +1627,8 @@ export function ProductsTab({
               keyword={varKeyword}
               category={varCategory}
               status={varStatus}
-              categories={varCategories}
-              statuses={varStatuses}
+              categories={varCategories.filter((v): v is string => Boolean(v))}
+              statuses={varStatuses.filter((v): v is string => Boolean(v))}
               onKeyword={setVarKeyword}
               onCategory={setVarCategory}
               onStatus={setVarStatus}

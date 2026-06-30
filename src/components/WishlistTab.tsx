@@ -87,13 +87,13 @@ function toWishlistItems(variations: MdVariation[], products: import('../types/m
 
     return {
       productNo: v.productNo,
-      productName: v.productName,
+      productName: v.productName ?? v.productNo,
       skuCode: v.skuCode,
       color: v.color,
       size: v.size,
-      category: v.category,
+      category: v.category ?? '',
       releaseDate: v.releaseDate,
-      status: v.status,
+      status: v.status ?? 'FutureShop取込済み',
       reason,
       priority,
       suggestedAction,
