@@ -190,7 +190,6 @@ function toMdProduct(p: VpsProduct): MdProduct {
     productUrlCode:  p.url,
     visible:         normalizeVisible(p.visible) ?? undefined,
     hasPreorder:     p.hasPreorder,
-    hasPlannedStock: p.hasPlannedStock,
     importSource:    'futureshop',
   };
 }
@@ -221,7 +220,6 @@ function toMdVariation(v: VpsVariation, p: VpsProduct): MdVariation {
     ecStock:         stock,
     visible:         normalizeVisible(p.visible) ?? undefined,
     hasPreorder:     p.hasPreorder,
-    hasPlannedStock: p.hasPlannedStock,
   };
 }
 
@@ -236,7 +234,6 @@ const FS_VARIATION_UPDATE_KEYS: (keyof MdVariation)[] = [
   'productName', 'color', 'size', 'colorBranchNo', 'colorName',
   'sizeBranchNo', 'sizeName', 'janCode', 'price',
   'actualStock', 'availableStock', 'ecStock', 'stockType',
-  'productUrl', 'imageUrl', 'visible', 'hasPreorder', 'hasPlannedStock',
 ];
 
 function fmtVis(v: unknown): string {
