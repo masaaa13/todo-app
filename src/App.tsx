@@ -13,12 +13,15 @@ import { BudgetTab } from './components/BudgetTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { InventoryTab } from './components/InventoryTab';
 import { ImportTab } from './components/ImportTab';
+import { SettingsTab } from './components/SettingsTab';
 import { LoginGate, loadAuth, clearAuth } from './components/LoginGate';
 import { sortTasks } from './utils/taskSort';
 import { applyFilter, applySearch } from './utils/taskFilter';
 import type { FilterType } from './types/filter';
 import type { SortType } from './types/sort';
 import type { MdProduct, MdVariation } from './types/md';
+import type { CandidateRuleSettings } from './types/settings';
+import { loadCandidateRuleSettings, saveCandidateRuleSettings } from './types/settings';
 
 export type StockSyncStatus =
   | { state: 'idle' }
@@ -123,6 +126,7 @@ const NAV_ITEMS: { tab: AppTab; icon: string; label: string }[] = [
   { tab: 'inventory', icon: '📊', label: '在庫候補' },
   { tab: 'schedules', icon: '🗓', label: 'スケジュール' },
   { tab: 'tasks',     icon: '✓',  label: 'タスク' },
+  { tab: 'settings',  icon: '⚙️', label: '設定' },
 ];
 
 function App() {
@@ -143,8 +147,14 @@ function App() {
   const [filter, setFilter] = useState<FilterType>('all');
   const [sortBy, setSortBy] = useState<SortType>('dueDate');
   const [search, setSearch] = useState('');
+  const [candidateRules, setCandidateRules] = useState<CandidateRuleSettings>(() => loadCandidateRuleSettings());
 
   useReminder(tasks);
+
+  const updateCandidateRules = useCallback((next: CandidateRuleSettings) => {
+    setCandidateRules(next);
+    saveCandidateRuleSettings(next);
+  }, []);
 
   useEffect(() => {
     const { products, savedAt } = loadMdProductsFromStorage();
@@ -559,6 +569,7 @@ function App() {
               onUpdateFsProducts={updateFsProducts}
               fsUpdateStatus={fsUpdateStatus}
               lastFsSyncAt={lastFsSyncAt}
+              candidateRules={candidateRules}
             />
           )}
 
@@ -622,6 +633,9 @@ function App() {
 
               {activeTab === 'schedules' && <ScheduleTab user={user} />}
               {activeTab === 'inventory' && <InventoryTab user={user} />}
+              {activeTab === 'settings' && (
+                <SettingsTab settings={candidateRules} onChange={updateCandidateRules} />
+              )}
               {activeTab === 'import' && (
                 <ImportTab
                   user={user}
