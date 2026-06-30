@@ -68,6 +68,17 @@ function safeSetLocalStorage(key: string, value: string): boolean {
 
 const MD_FS_SYNC_AT_KEY = 'ecTodo.lastFsSyncAt';
 
+function normalizeProductNos(values: unknown[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((v) => String(v ?? '').trim())
+        .filter((v) => /^\d{7}$/.test(v)),
+    ),
+  );
+}
+
+
 const FS_PRODUCT_UPDATE_KEYS: (keyof MdProduct)[] = [
   'productName', 'category', 'imageUrl', 'price', 'productUrl', 'productUrlCode',
   'visible', 'hasPreorder', 'hasPlannedStock', 'importSource', 'skuCount',
@@ -161,7 +172,7 @@ function App() {
     if (mdVariations.length === 0) return;
     setSyncStatus({ state: 'syncing' });
 
-    const productNos = Array.from(new Set(mdVariations.map((v) => v.productNo)));
+    const productNos = normalizeProductNos(mdVariations.map((v) => v.productNo));
     const CHUNK_SIZE = 100;
     const allStock: Record<string, number> = {};
 
@@ -337,7 +348,7 @@ function App() {
 
   const updateFsProducts = useCallback(async () => {
     if (mdProducts.length === 0) return;
-    const productNos = mdProducts.map((p) => p.productNo);
+    const productNos = normalizeProductNos(mdProducts.map((p) => p.productNo));
     const CHUNK = 50;
     const total = productNos.length;
     setFsUpdateStatus({ state: 'syncing', done: 0, total });
