@@ -42,6 +42,30 @@ import styles from './App.module.css';
 
 const MD_PRODUCTS_KEY   = 'ecTodo.mdProducts';
 const MD_VARIATIONS_KEY = 'ecTodo.mdVariations';
+
+function safeSetLocalStorage(key: string, value: string): boolean {
+  try {
+    window.safeSetLocalStorage(key, value);
+    return true;
+  } catch (error) {
+    const domError = error as DOMException;
+    const isQuotaError =
+      domError?.name === 'QuotaExceededError' ||
+      domError?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      domError?.code === 22 ||
+      domError?.code === 1014;
+
+    console.warn(
+      isQuotaError
+        ? `localStorage quota exceeded: ${key}. Data will remain in memory for this session.`
+        : `localStorage save failed: ${key}`,
+      error,
+    );
+
+    return false;
+  }
+}
+
 const MD_FS_SYNC_AT_KEY = 'ecTodo.lastFsSyncAt';
 
 const FS_PRODUCT_UPDATE_KEYS: (keyof MdProduct)[] = [
@@ -180,8 +204,8 @@ function App() {
       });
 
       const now = new Date().toISOString();
-      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
-      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+      safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
+      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
 
       setMdVariations(updatedVariations);
       setMdProducts(updatedProducts);
@@ -288,8 +312,8 @@ function App() {
       });
 
       const now = new Date().toISOString();
-      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
-      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+      safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
+      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
       setMdProducts(updatedProducts);
       setMdVariations(updatedVariations);
       setSalesSyncStatus({
@@ -437,9 +461,9 @@ function App() {
       });
 
       const now = new Date().toISOString();
-      localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products: newProducts, savedAt: mdProductsSavedAt ?? now }));
-      localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations: newVariations, savedAt: now }));
-      localStorage.setItem(MD_FS_SYNC_AT_KEY, now);
+      safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: newProducts, savedAt: mdProductsSavedAt ?? now }));
+      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: newVariations, savedAt: now }));
+      safeSetLocalStorage(MD_FS_SYNC_AT_KEY, now);
       setMdProducts(newProducts);
       setMdVariations(newVariations);
       setLastFsSyncAt(now);
@@ -589,8 +613,8 @@ function App() {
                   user={user}
                   onSendToProducts={(products, variations) => {
                     const now = new Date().toISOString();
-                    localStorage.setItem(MD_PRODUCTS_KEY, JSON.stringify({ products, savedAt: now }));
-                    localStorage.setItem(MD_VARIATIONS_KEY, JSON.stringify({ variations, savedAt: now }));
+                    safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products, savedAt: now }));
+                    safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations, savedAt: now }));
                     setMdProducts(products);
                     setMdProductsSavedAt(now);
                     setMdVariations(variations);
