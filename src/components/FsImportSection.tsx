@@ -231,7 +231,7 @@ const FS_PRODUCT_UPDATE_KEYS: (keyof MdProduct)[] = [
 ];
 
 const FS_VARIATION_UPDATE_KEYS: (keyof MdVariation)[] = [
-  'productName', 'color', 'size', 'colorBranchNo', 'colorName',
+  'color', 'size', 'colorBranchNo', 'colorName',
   'sizeBranchNo', 'sizeName', 'janCode', 'price',
   'actualStock', 'availableStock', 'ecStock', 'stockType',
 ];
