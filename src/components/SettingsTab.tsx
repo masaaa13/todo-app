@@ -57,15 +57,7 @@ export function SettingsTab({ settings, onChange }: Props) {
         </button>
       </div>
 
-      <div className={styles.fixedCard}>
-        <h2 className={styles.cardTitle}>固定条件</h2>
-        <p className={styles.fixedText}>
-          公開中商品のみ対象・ノベルティ/特典系は除外します。
-        </p>
-        <p className={styles.fixedNote}>
-          この2条件は運用上必須のため、設定項目からは外しています。
-        </p>
-      </div>
+      
 
       <div className={styles.grid}>
         <div className={styles.card}>
