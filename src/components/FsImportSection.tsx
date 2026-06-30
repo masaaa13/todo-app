@@ -453,7 +453,7 @@ export function FsImportSection({ onSendToProducts }: FsImportSectionProps) {
       let paginationStatus: 'complete' | 'limit_reached' = 'complete';
 
       while (pageCount < MAX_FULL_SYNC_PAGES) {
-        const body: Record<string, unknown> = { mode: 'all', types: DEFAULT_TYPES, count: 50 };
+        const body: Record<string, unknown> = { mode: 'all', types: DEFAULT_TYPES, count: 250 };
         if (cursor) body.cursor = cursor;
 
         const res = await fetch('/api/check-products', {
