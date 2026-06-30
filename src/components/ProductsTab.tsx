@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { MdProduct, MdVariation } from '../types/md';
+import type { CandidateRuleSettings } from '../types/settings';
+import { DEFAULT_CANDIDATE_RULE_SETTINGS } from '../types/settings';
 import styles from './ProductsTab.module.css';
 
 type StockSyncStatus =
@@ -131,12 +133,60 @@ function isInStockCandidate(v: MdProduct | MdVariation): boolean {
   return stockValue(v) > 0;
 }
 
-function isHotCandidate(v: MdProduct | MdVariation): boolean {
-  return stockValue(v) > 0 && salesValue(v) >= 3;
+const NOVELTY_BENEFIT_KEYWORDS = [
+  'ノベルティ',
+  '特典',
+  'novelty',
+  'present',
+  'gift',
+  'プレゼント',
+];
+
+function isNoveltyBenefitItem(v: MdProduct | MdVariation): boolean {
+  const target = [
+    v.productNo,
+    'skuCode' in v ? v.skuCode : '',
+    v.productName,
+    v.category,
+    v.productUrl,
+  ]
+    .map((value) => String(value ?? '').toLowerCase())
+    .join(' ');
+
+  return NOVELTY_BENEFIT_KEYWORDS.some((keyword) => target.includes(keyword.toLowerCase()));
 }
 
-function isDeadCandidate(v: MdProduct | MdVariation): boolean {
-  return stockValue(v) >= 2 && salesValue(v) === 0;
+function isFixedCandidateEligible(v: MdProduct | MdVariation): boolean {
+  return normalizeVisible(v.visible) !== false && !isNoveltyBenefitItem(v);
+}
+
+function isHotCandidate(
+  v: MdProduct | MdVariation,
+  rules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
+): boolean {
+  return isFixedCandidateEligible(v)
+    && stockValue(v) >= rules.hotMinStock
+    && salesValue(v) >= rules.hotMinSalesQty;
+}
+
+function isDeadCandidate(
+  v: MdProduct | MdVariation,
+  rules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
+): boolean {
+  return isFixedCandidateEligible(v)
+    && stockValue(v) >= rules.deadMinStock
+    && salesValue(v) <= rules.deadMaxSalesQty;
+}
+
+function candidateConditionText(
+  type: 'hot' | 'dead',
+  rules: CandidateRuleSettings,
+): string {
+  const fixed = '固定条件：公開中のみ・ノベルティ/特典系除外';
+  if (type === 'hot') {
+    return `${fixed} / 在庫${rules.hotMinStock}点以上 / 期間販売数${rules.hotMinSalesQty}点以上`;
+  }
+  return `${fixed} / 在庫${rules.deadMinStock}点以上 / 期間販売数${rules.deadMaxSalesQty}点以下`;
 }
 
 function isFsSyncedVariation(v: MdVariation): boolean {
@@ -152,9 +202,13 @@ function isFsSyncedVariation(v: MdVariation): boolean {
   );
 }
 
-function candidateLabel(v: MdProduct | MdVariation): string {
-  if (isHotCandidate(v)) return '売れ筋候補';
-  if (isDeadCandidate(v)) return '死に筋候補';
+function candidateLabel(
+  v: MdProduct | MdVariation,
+  rules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
+): string {
+  if (!isFixedCandidateEligible(v)) return '対象外';
+  if (isHotCandidate(v, rules)) return '売れ筋候補';
+  if (isDeadCandidate(v, rules)) return '死に筋候補';
   if (isInStockCandidate(v)) return '在庫あり';
   return '—';
 }
@@ -190,7 +244,11 @@ function sortDeadCandidateRows<T extends MdProduct | MdVariation>(rows: T[]): T[
   );
 }
 
-function downloadMdProductsCsv(products: MdProduct[], filename = 'mdProducts.csv'): void {
+function downloadMdProductsCsv(
+  products: MdProduct[],
+  filename = 'mdProducts.csv',
+  candidateRules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
+): void {
   const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = products.map((p) => {
     const cols = [
@@ -209,7 +267,7 @@ function downloadMdProductsCsv(products: MdProduct[], filename = 'mdProducts.csv
       p.salesAmount30d != null ? String(p.salesAmount30d) : '',
       p.monthlySalesQty    != null ? String(p.monthlySalesQty)    : '',
       p.monthlySalesAmount != null ? String(p.monthlySalesAmount) : '',
-      candidateLabel(p),
+      candidateLabel(p, candidateRules),
     ];
     return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
@@ -224,7 +282,11 @@ function downloadMdProductsCsv(products: MdProduct[], filename = 'mdProducts.csv
   URL.revokeObjectURL(url);
 }
 
-function downloadMdVariationsCsv(variations: MdVariation[], filename = 'mdVariations.csv'): void {
+function downloadMdVariationsCsv(
+  variations: MdVariation[],
+  filename = 'mdVariations.csv',
+  candidateRules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
+): void {
   const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = variations.map((v) => {
     const cols = [
@@ -245,7 +307,7 @@ function downloadMdVariationsCsv(variations: MdVariation[], filename = 'mdVariat
       v.salesAmount30d != null ? String(v.salesAmount30d) : '',
       v.monthlySalesQty    != null ? String(v.monthlySalesQty)    : '',
       v.monthlySalesAmount != null ? String(v.monthlySalesAmount) : '',
-      candidateLabel(v),
+      candidateLabel(v, candidateRules),
     ];
     return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
@@ -439,16 +501,19 @@ type KpiRowProps = {
   candidateFilter: CandidateFilter;
   onCandidateFilter: (filter: CandidateFilter) => void;
   unsyncedProductCount: number;
+  candidateRules: CandidateRuleSettings;
 };
 
-function KpiRow({ products, isReal, candidateFilter, onCandidateFilter, unsyncedProductCount }: KpiRowProps) {
+function KpiRow({ products, isReal, candidateFilter, onCandidateFilter, unsyncedProductCount,
+  candidateRules,
+}: KpiRowProps) {
   const totalSku = products.reduce((sum, p) => sum + (p.skuCount ?? 0), 0);
   const kpis: { label: string; value: string; active: boolean; filter: CandidateFilter }[] = [
     { label: '登録商品数', value: isReal ? String(products.length) : '—', active: isReal, filter: 'all' },
     { label: 'SKU数', value: isReal ? String(totalSku) : '—', active: isReal, filter: 'all' },
     { label: '在庫あり', value: `${products.filter(isInStockCandidate).length}品番`, active: products.some(isInStockCandidate), filter: 'inStock' },
-    { label: '売れ筋候補', value: `${products.filter(isHotCandidate).length}品番`, active: products.some(isHotCandidate), filter: 'hot' },
-    { label: '死に筋候補', value: `${products.filter(isDeadCandidate).length}品番`, active: products.some(isDeadCandidate), filter: 'dead' },
+    { label: '売れ筋候補', value: `${products.filter((item) => isHotCandidate(item, candidateRules)).length}品番`, active: products.some((item) => isHotCandidate(item, candidateRules)), filter: 'hot' },
+    { label: '死に筋候補', value: `${products.filter((item) => isDeadCandidate(item, candidateRules)).length}品番`, active: products.some((item) => isDeadCandidate(item, candidateRules)), filter: 'dead' },
     { label: '未同期SKUあり', value: `${unsyncedProductCount}品番`, active: unsyncedProductCount > 0, filter: 'unsynced' },
   ];
 
@@ -477,12 +542,14 @@ function VariationKpiRow({
   isReal,
   candidateFilter,
   onCandidateFilter,
-}: {
+
+  candidateRules = DEFAULT_CANDIDATE_RULE_SETTINGS,}: {
   variations: MdVariation[];
   isReal: boolean;
   candidateFilter: CandidateFilter;
   onCandidateFilter: (filter: CandidateFilter) => void;
-}) {
+
+  candidateRules?: CandidateRuleSettings;}) {
   const uniqueProductCount = useMemo(
     () => new Set(variations.map((v) => v.productNo)).size,
     [variations],
@@ -494,8 +561,8 @@ function VariationKpiRow({
     { label: '登録商品数', value: isReal ? String(uniqueProductCount) : '—', active: isReal, filter: 'all' },
     { label: 'SKU数', value: isReal ? String(variations.length) : '—', active: isReal, filter: 'all' },
     { label: '在庫あり', value: `${variations.filter(isInStockCandidate).length}SKU`, active: variations.some(isInStockCandidate), filter: 'inStock' },
-    { label: '売れ筋候補', value: `${variations.filter(isHotCandidate).length}SKU`, active: variations.some(isHotCandidate), filter: 'hot' },
-    { label: '死に筋候補', value: `${variations.filter(isDeadCandidate).length}SKU`, active: variations.some(isDeadCandidate), filter: 'dead' },
+    { label: '売れ筋候補', value: `${variations.filter((item) => isHotCandidate(item, candidateRules)).length}SKU`, active: variations.some((item) => isHotCandidate(item, candidateRules)), filter: 'hot' },
+    { label: '死に筋候補', value: `${variations.filter((item) => isDeadCandidate(item, candidateRules)).length}SKU`, active: variations.some((item) => isDeadCandidate(item, candidateRules)), filter: 'dead' },
     { label: '未同期SKU', value: `${unsyncedCount}SKU`, active: unsyncedCount > 0, filter: 'unsynced' },
   ];
 
@@ -1534,6 +1601,7 @@ type ProductsTabProps = {
   onUpdateFsProducts?: () => Promise<void>;
   fsUpdateStatus?: FsUpdateStatus;
   lastFsSyncAt?: string | null;
+  candidateRules?: CandidateRuleSettings;
 };
 
 export function ProductsTab({
@@ -1548,6 +1616,7 @@ export function ProductsTab({
   onUpdateFsProducts,
   fsUpdateStatus,
   lastFsSyncAt,
+  candidateRules = DEFAULT_CANDIDATE_RULE_SETTINGS,
 }: ProductsTabProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('product');
   const [keyword, setKeyword] = useState('');
@@ -1643,12 +1712,12 @@ export function ProductsTab({
       if (visible === 'private' && normalizeVisible(p.visible) !== false) return false;
       if (visible === 'unknown' && normalizeVisible(p.visible) !== null)  return false;
       if (candidateFilter === 'inStock' && !isInStockCandidate(p)) return false;
-      if (candidateFilter === 'hot' && !isHotCandidate(p)) return false;
-      if (candidateFilter === 'dead' && !isDeadCandidate(p)) return false;
+      if (candidateFilter === 'hot' && !isHotCandidate(p, candidateRules)) return false;
+      if (candidateFilter === 'dead' && !isDeadCandidate(p, candidateRules)) return false;
       if (candidateFilter === 'unsynced' && !unsyncedProductNos.has(p.productNo)) return false;
       return true;
     });
-  }, [activeData, keyword, category, status, visible, candidateFilter, unsyncedProductNos]);
+  }, [activeData, keyword, category, status, visible, candidateFilter, unsyncedProductNos, candidateRules]);
 
   const varCategories = useMemo(
     () => Array.from(new Set(variations.map((v) => v.category))).filter(Boolean),
@@ -1669,12 +1738,12 @@ export function ProductsTab({
       if (varCategory && v.category !== varCategory) return false;
       if (varStatus && v.status !== varStatus) return false;
       if (varCandidateFilter === 'inStock' && !isInStockCandidate(v)) return false;
-      if (varCandidateFilter === 'hot' && !isHotCandidate(v)) return false;
-      if (varCandidateFilter === 'dead' && !isDeadCandidate(v)) return false;
+      if (varCandidateFilter === 'hot' && !isHotCandidate(v, candidateRules)) return false;
+      if (varCandidateFilter === 'dead' && !isDeadCandidate(v, candidateRules)) return false;
       if (varCandidateFilter === 'unsynced' && isFsSyncedVariation(v)) return false;
       return true;
     });
-  }, [variations, varKeyword, varCategory, varStatus, varCandidateFilter]);
+  }, [variations, varKeyword, varCategory, varStatus, varCandidateFilter, candidateRules]);
 
   const sortedProducts = useMemo(() => {
     if (!productSortConfig) return filtered;
@@ -1705,38 +1774,40 @@ export function ProductsTab({
     : 'バリエーションデータがありません。商品登録CSVタブから反映してください。';
 
   // CSV exports use sorted data so output order matches display
-  const handleProductCsv = () => downloadMdProductsCsv(sortedProducts);
-  const handleVariationCsv = () => downloadMdVariationsCsv(sortedVariations);
+  const handleProductCsv = () => downloadMdProductsCsv(sortedProducts, undefined, candidateRules);
+  const handleVariationCsv = () => downloadMdVariationsCsv(sortedVariations, undefined, candidateRules);
 
   const hotCandidateCount = viewMode === 'product'
-    ? activeData.filter(isHotCandidate).length
-    : variations.filter(isHotCandidate).length;
+    ? activeData.filter((p) => isHotCandidate(p, candidateRules)).length
+    : variations.filter((v) => isHotCandidate(v, candidateRules)).length;
 
   const deadCandidateCount = viewMode === 'product'
-    ? activeData.filter(isDeadCandidate).length
-    : variations.filter(isDeadCandidate).length;
+    ? activeData.filter((p) => isDeadCandidate(p, candidateRules)).length
+    : variations.filter((v) => isDeadCandidate(v, candidateRules)).length;
 
   const candidateCsvUnit = viewMode === 'product' ? '品番' : 'SKU';
   const candidateCsvDisabled = viewMode === 'product' ? !isReal : !hasVariations;
+  const hotCandidateCondition = candidateConditionText('hot', candidateRules);
+  const deadCandidateCondition = candidateConditionText('dead', candidateRules);
 
   const handleHotCandidateCsv = () => {
     if (viewMode === 'product') {
-      const rows = sortHotCandidateRows(activeData.filter(isHotCandidate));
-      downloadMdProductsCsv(rows, `candystripper_hot_candidates_products_${csvDateStamp()}.csv`);
+      const rows = sortHotCandidateRows(activeData.filter((p) => isHotCandidate(p, candidateRules)));
+      downloadMdProductsCsv(rows, `candystripper_hot_candidates_products_${csvDateStamp()}.csv`, candidateRules);
       return;
     }
-    const rows = sortHotCandidateRows(variations.filter(isHotCandidate));
-    downloadMdVariationsCsv(rows, `candystripper_hot_candidates_skus_${csvDateStamp()}.csv`);
+    const rows = sortHotCandidateRows(variations.filter((v) => isHotCandidate(v, candidateRules)));
+    downloadMdVariationsCsv(rows, `candystripper_hot_candidates_skus_${csvDateStamp()}.csv`, candidateRules);
   };
 
   const handleDeadCandidateCsv = () => {
     if (viewMode === 'product') {
-      const rows = sortDeadCandidateRows(activeData.filter(isDeadCandidate));
-      downloadMdProductsCsv(rows, `candystripper_dead_candidates_products_${csvDateStamp()}.csv`);
+      const rows = sortDeadCandidateRows(activeData.filter((p) => isDeadCandidate(p, candidateRules)));
+      downloadMdProductsCsv(rows, `candystripper_dead_candidates_products_${csvDateStamp()}.csv`, candidateRules);
       return;
     }
-    const rows = sortDeadCandidateRows(variations.filter(isDeadCandidate));
-    downloadMdVariationsCsv(rows, `candystripper_dead_candidates_skus_${csvDateStamp()}.csv`);
+    const rows = sortDeadCandidateRows(variations.filter((v) => isDeadCandidate(v, candidateRules)));
+    downloadMdVariationsCsv(rows, `candystripper_dead_candidates_skus_${csvDateStamp()}.csv`, candidateRules);
   };
 
   return (
@@ -1778,6 +1849,11 @@ export function ProductsTab({
         <span className={styles.candidateCsvNote}>{deadCandidateCount}{candidateCsvUnit}を出力</span>
       </div>
 
+      <div className={styles.candidateConditionBox}>
+        <span>売れ筋条件：{hotCandidateCondition}</span>
+        <span>死に筋条件：{deadCandidateCondition}</span>
+      </div>
+
       <FsUpdateSection
         onUpdateFsProducts={onUpdateFsProducts}
         fsUpdateStatus={fsUpdateStatus}
@@ -1810,6 +1886,7 @@ export function ProductsTab({
             candidateFilter={candidateFilter}
             onCandidateFilter={setCandidateFilter}
             unsyncedProductCount={unsyncedProductNos.size}
+            candidateRules={candidateRules}
           />
           <div className={styles.mainLayout}>
             <FilterPanel
@@ -1849,6 +1926,7 @@ export function ProductsTab({
             isReal={hasVariations}
             candidateFilter={varCandidateFilter}
             onCandidateFilter={setVarCandidateFilter}
+            candidateRules={candidateRules}
           />
           <div className={styles.mainLayout}>
             <VariationFilterPanel
