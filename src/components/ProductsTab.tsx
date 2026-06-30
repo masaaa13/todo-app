@@ -102,6 +102,29 @@ const DUMMY_PRODUCTS: MdProduct[] = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+
+function numValue(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function stockValue(v: { availableStock?: number | null; actualStock?: number | null; ecStock?: number | null }): number {
+  return Math.max(
+    numValue(v.availableStock),
+    numValue(v.actualStock),
+    numValue(v.ecStock),
+  );
+}
+
+function salesValue(v: { salesQty30d?: number | null; monthlySalesQty?: number | null; recentSales?: number | null }): number {
+  return Math.max(
+    numValue(v.salesQty30d),
+    numValue(v.monthlySalesQty),
+    numValue(v.recentSales),
+  );
+}
+
 function csvEscape(v: string): string {
   if (v.includes(',') || v.includes('"') || v.includes('\n')) {
     return '"' + v.replace(/"/g, '""') + '"';
@@ -357,10 +380,10 @@ function KpiRow({ products, isReal }: KpiRowProps) {
   const kpis = [
     { label: '登録商品数', value: isReal ? String(products.length) : '—', active: isReal },
     { label: 'SKU数', value: isReal ? String(totalSku) : '—', active: isReal },
-    { label: '在庫あり', value: '準備中', active: false },
-    { label: '売れ筋候補', value: '準備中', active: false },
-    { label: '死に筋候補', value: '準備中', active: false },
-    { label: '欲しいもの候補', value: '準備中', active: false },
+    { label: '在庫あり', value: `${products.filter((p) => stockValue(p) > 0).length}品番`, active: products.some((p) => stockValue(p) > 0) },
+    { label: '売れ筋候補', value: `${products.filter((p) => stockValue(p) > 0 && salesValue(p) >= 3).length}品番`, active: products.some((p) => stockValue(p) > 0 && salesValue(p) >= 3) },
+    { label: '死に筋候補', value: `${products.filter((p) => stockValue(p) >= 2 && salesValue(p) === 0).length}品番`, active: products.some((p) => stockValue(p) >= 2 && salesValue(p) === 0) },
+    { label: '欲しいもの候補', value: '次フェーズ', active: false },
   ];
 
   return (
@@ -383,10 +406,10 @@ function VariationKpiRow({ variations, isReal }: { variations: MdVariation[]; is
   const kpis = [
     { label: '登録商品数', value: isReal ? String(uniqueProductCount) : '—', active: isReal },
     { label: 'SKU数', value: isReal ? String(variations.length) : '—', active: isReal },
-    { label: '在庫あり', value: '準備中', active: false },
-    { label: '売れ筋候補', value: '準備中', active: false },
-    { label: '死に筋候補', value: '準備中', active: false },
-    { label: '欲しいもの候補', value: '準備中', active: false },
+    { label: '在庫あり', value: `${variations.filter((v) => stockValue(v) > 0).length}SKU`, active: variations.some((v) => stockValue(v) > 0) },
+    { label: '売れ筋候補', value: `${variations.filter((v) => stockValue(v) > 0 && salesValue(v) >= 3).length}SKU`, active: variations.some((v) => stockValue(v) > 0 && salesValue(v) >= 3) },
+    { label: '死に筋候補', value: `${variations.filter((v) => stockValue(v) >= 2 && salesValue(v) === 0).length}SKU`, active: variations.some((v) => stockValue(v) >= 2 && salesValue(v) === 0) },
+    { label: '欲しいもの候補', value: '次フェーズ', active: false },
   ];
 
   return (
