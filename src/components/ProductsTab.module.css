@@ -1081,3 +1081,22 @@
   font-size: 0.72rem;
   color: var(--color-text-sub);
 }
+
+button.kpiCard {
+  border: 0;
+  font: inherit;
+  text-align: left;
+}
+
+.kpiCardButton {
+  cursor: pointer;
+}
+
+.kpiCardButton:hover {
+  transform: translateY(-1px);
+}
+
+.kpiCard[data-selected='true'] {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}

@@ -23,6 +23,7 @@ type FsUpdateStatus =
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'product' | 'variation';
+type CandidateFilter = 'all' | 'inStock' | 'hot' | 'dead' | 'unsynced';
 
 type ColumnConfig = {
   key: string;
@@ -124,6 +125,40 @@ function salesValue(v: { salesQty30d?: number | null; monthlySalesQty?: number |
     numValue(v.recentSales),
   );
 }
+
+
+function isInStockCandidate(v: MdProduct | MdVariation): boolean {
+  return stockValue(v) > 0;
+}
+
+function isHotCandidate(v: MdProduct | MdVariation): boolean {
+  return stockValue(v) > 0 && salesValue(v) >= 3;
+}
+
+function isDeadCandidate(v: MdProduct | MdVariation): boolean {
+  return stockValue(v) >= 2 && salesValue(v) === 0;
+}
+
+function isFsSyncedVariation(v: MdVariation): boolean {
+  return Boolean(
+    v.productUrl ||
+    v.imageUrl ||
+    v.colorBranchNo ||
+    v.sizeBranchNo ||
+    v.janCode ||
+    v.visible !== undefined ||
+    v.hasPreorder !== undefined ||
+    v.hasPlannedStock !== undefined
+  );
+}
+
+function candidateLabel(v: MdProduct | MdVariation): string {
+  if (isHotCandidate(v)) return '売れ筋候補';
+  if (isDeadCandidate(v)) return '死に筋候補';
+  if (isInStockCandidate(v)) return '在庫あり';
+  return '—';
+}
+
 
 function csvEscape(v: string): string {
   if (v.includes(',') || v.includes('"') || v.includes('\n')) {
@@ -373,52 +408,87 @@ function ViewToggle({ viewMode, onChangeMode }: { viewMode: ViewMode; onChangeMo
   );
 }
 
-type KpiRowProps = { products: MdProduct[]; isReal: boolean };
+type KpiRowProps = {
+  products: MdProduct[];
+  isReal: boolean;
+  candidateFilter: CandidateFilter;
+  onCandidateFilter: (filter: CandidateFilter) => void;
+  unsyncedProductCount: number;
+};
 
-function KpiRow({ products, isReal }: KpiRowProps) {
-  const totalSku = products.reduce((s, p) => s + (p.skuCount ?? 0), 0);
-  const kpis = [
-    { label: '登録商品数', value: isReal ? String(products.length) : '—', active: isReal },
-    { label: 'SKU数', value: isReal ? String(totalSku) : '—', active: isReal },
-    { label: '在庫あり', value: `${products.filter((p) => stockValue(p) > 0).length}品番`, active: products.some((p) => stockValue(p) > 0) },
-    { label: '売れ筋候補', value: `${products.filter((p) => stockValue(p) > 0 && salesValue(p) >= 3).length}品番`, active: products.some((p) => stockValue(p) > 0 && salesValue(p) >= 3) },
-    { label: '死に筋候補', value: `${products.filter((p) => stockValue(p) >= 2 && salesValue(p) === 0).length}品番`, active: products.some((p) => stockValue(p) >= 2 && salesValue(p) === 0) },
-    { label: '欲しいもの候補', value: '次フェーズ', active: false },
+function KpiRow({ products, isReal, candidateFilter, onCandidateFilter, unsyncedProductCount }: KpiRowProps) {
+  const totalSku = products.reduce((sum, p) => sum + (p.skuCount ?? 0), 0);
+  const kpis: { label: string; value: string; active: boolean; filter: CandidateFilter }[] = [
+    { label: '登録商品数', value: isReal ? String(products.length) : '—', active: isReal, filter: 'all' },
+    { label: 'SKU数', value: isReal ? String(totalSku) : '—', active: isReal, filter: 'all' },
+    { label: '在庫あり', value: `${products.filter(isInStockCandidate).length}品番`, active: products.some(isInStockCandidate), filter: 'inStock' },
+    { label: '売れ筋候補', value: `${products.filter(isHotCandidate).length}品番`, active: products.some(isHotCandidate), filter: 'hot' },
+    { label: '死に筋候補', value: `${products.filter(isDeadCandidate).length}品番`, active: products.some(isDeadCandidate), filter: 'dead' },
+    { label: '未同期SKUあり', value: `${unsyncedProductCount}品番`, active: unsyncedProductCount > 0, filter: 'unsynced' },
   ];
 
   return (
     <div className={styles.kpiRow}>
-      {kpis.map(({ label, value, active }) => (
-        <div key={label} className={styles.kpiCard} data-active={active || undefined}>
+      {kpis.map(({ label, value, active, filter }) => (
+        <button
+          key={label}
+          type="button"
+          className={`${styles.kpiCard} ${styles.kpiCardButton}`}
+          data-active={active || undefined}
+          data-selected={candidateFilter === filter || undefined}
+          onClick={() => onCandidateFilter(candidateFilter === filter ? 'all' : filter)}
+          title={`${label}で絞り込み`}
+        >
           <span className={styles.kpiValue}>{value}</span>
           <span className={styles.kpiLabel}>{label}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
 }
 
-function VariationKpiRow({ variations, isReal }: { variations: MdVariation[]; isReal: boolean }) {
+function VariationKpiRow({
+  variations,
+  isReal,
+  candidateFilter,
+  onCandidateFilter,
+}: {
+  variations: MdVariation[];
+  isReal: boolean;
+  candidateFilter: CandidateFilter;
+  onCandidateFilter: (filter: CandidateFilter) => void;
+}) {
   const uniqueProductCount = useMemo(
     () => new Set(variations.map((v) => v.productNo)).size,
     [variations],
   );
-  const kpis = [
-    { label: '登録商品数', value: isReal ? String(uniqueProductCount) : '—', active: isReal },
-    { label: 'SKU数', value: isReal ? String(variations.length) : '—', active: isReal },
-    { label: '在庫あり', value: `${variations.filter((v) => stockValue(v) > 0).length}SKU`, active: variations.some((v) => stockValue(v) > 0) },
-    { label: '売れ筋候補', value: `${variations.filter((v) => stockValue(v) > 0 && salesValue(v) >= 3).length}SKU`, active: variations.some((v) => stockValue(v) > 0 && salesValue(v) >= 3) },
-    { label: '死に筋候補', value: `${variations.filter((v) => stockValue(v) >= 2 && salesValue(v) === 0).length}SKU`, active: variations.some((v) => stockValue(v) >= 2 && salesValue(v) === 0) },
-    { label: '欲しいもの候補', value: '次フェーズ', active: false },
+
+  const unsyncedCount = variations.filter((v) => !isFsSyncedVariation(v)).length;
+
+  const kpis: { label: string; value: string; active: boolean; filter: CandidateFilter }[] = [
+    { label: '登録商品数', value: isReal ? String(uniqueProductCount) : '—', active: isReal, filter: 'all' },
+    { label: 'SKU数', value: isReal ? String(variations.length) : '—', active: isReal, filter: 'all' },
+    { label: '在庫あり', value: `${variations.filter(isInStockCandidate).length}SKU`, active: variations.some(isInStockCandidate), filter: 'inStock' },
+    { label: '売れ筋候補', value: `${variations.filter(isHotCandidate).length}SKU`, active: variations.some(isHotCandidate), filter: 'hot' },
+    { label: '死に筋候補', value: `${variations.filter(isDeadCandidate).length}SKU`, active: variations.some(isDeadCandidate), filter: 'dead' },
+    { label: '未同期SKU', value: `${unsyncedCount}SKU`, active: unsyncedCount > 0, filter: 'unsynced' },
   ];
 
   return (
     <div className={styles.kpiRow}>
-      {kpis.map(({ label, value, active }) => (
-        <div key={label} className={styles.kpiCard} data-active={active || undefined}>
+      {kpis.map(({ label, value, active, filter }) => (
+        <button
+          key={label}
+          type="button"
+          className={`${styles.kpiCard} ${styles.kpiCardButton}`}
+          data-active={active || undefined}
+          data-selected={candidateFilter === filter || undefined}
+          onClick={() => onCandidateFilter(candidateFilter === filter ? 'all' : filter)}
+          title={`${label}で絞り込み`}
+        >
           <span className={styles.kpiValue}>{value}</span>
           <span className={styles.kpiLabel}>{label}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -429,19 +499,42 @@ type FilterPanelProps = {
   category: string;
   status: string;
   visible?: string;
+  candidateFilter: CandidateFilter;
   categories: string[];
   statuses: string[];
   onKeyword: (v: string) => void;
   onCategory: (v: string) => void;
   onStatus: (v: string) => void;
   onVisible?: (v: string) => void;
+  onCandidateFilter: (v: CandidateFilter) => void;
   filteredCount: number;
   totalCount: number;
 };
 
+function CandidateFilterSelect({
+  value,
+  onChange,
+}: {
+  value: CandidateFilter;
+  onChange: (v: CandidateFilter) => void;
+}) {
+  return (
+    <div className={styles.filterGroup}>
+      <label className={styles.filterLabel}>候補区分</label>
+      <select className={styles.filterSelect} value={value} onChange={(e) => onChange(e.target.value as CandidateFilter)}>
+        <option value="all">全て</option>
+        <option value="inStock">在庫あり</option>
+        <option value="hot">売れ筋候補</option>
+        <option value="dead">死に筋候補</option>
+        <option value="unsynced">未同期SKU</option>
+      </select>
+    </div>
+  );
+}
+
 function FilterPanel({
-  keyword, category, status, visible, categories, statuses,
-  onKeyword, onCategory, onStatus, onVisible, filteredCount, totalCount,
+  keyword, category, status, visible, candidateFilter, categories, statuses,
+  onKeyword, onCategory, onStatus, onVisible, onCandidateFilter, filteredCount, totalCount,
 }: FilterPanelProps) {
   return (
     <div className={styles.filterPanel}>
@@ -481,6 +574,7 @@ function FilterPanel({
           </select>
         </div>
       )}
+      <CandidateFilterSelect value={candidateFilter} onChange={onCandidateFilter} />
       <div className={styles.filterGroup}>
         <label className={styles.filterLabel}>コラボ/通常</label>
         <select className={styles.filterSelect} disabled>
@@ -513,8 +607,8 @@ function FilterPanel({
 }
 
 function VariationFilterPanel({
-  keyword, category, status, categories, statuses,
-  onKeyword, onCategory, onStatus, filteredCount, totalCount,
+  keyword, category, status, candidateFilter, categories, statuses,
+  onKeyword, onCategory, onStatus, onCandidateFilter, filteredCount, totalCount,
 }: FilterPanelProps) {
   return (
     <div className={styles.filterPanel}>
@@ -543,6 +637,7 @@ function VariationFilterPanel({
           {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
+      <CandidateFilterSelect value={candidateFilter} onChange={onCandidateFilter} />
       <div className={styles.filterDivider} />
       <div className={styles.filterCountArea}>
         <div className={styles.filterCountRow}>
@@ -795,6 +890,7 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'recentSales',       label: '直近売上',       defaultVisible: true,  defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'candidateType',     label: '候補区分',       defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (p) => candidateLabel(p), render: (p) => <span className={styles.naCell}>{candidateLabel(p)}</span> },
   { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (p) => p.status, render: (p) => <StatusPill status={p.status} /> },
   { key: 'nextAction',        label: '次アクション',   defaultVisible: true,  defaultWidth: 180, sortable: true, sortValue: (p) => p.nextAction, render: (p) => <ActionPill action={p.nextAction} /> },
   { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (p) => <ProductThumbnail imageUrl={p.imageUrl} alt={p.productName} /> },
@@ -839,6 +935,8 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'recentSales',       label: '直近売上',       defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'candidateType',     label: '候補区分',       defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (v) => candidateLabel(v), render: (v) => <span className={styles.naCell}>{candidateLabel(v)}</span> },
+  { key: 'fsSyncStatus',      label: 'FS同期',         defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => isFsSyncedVariation(v), render: (v) => <span className={styles.naCell}>{isFsSyncedVariation(v) ? '同期済み' : '未同期'}</span> },
   { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (v) => v.status ?? '', render: (v) => <StatusPill status={v.status ?? 'FutureShop取込済み'} /> },
   { key: 'nextAction',        label: '次アクション',   defaultVisible: false, defaultWidth: 180, render: (v) => <ActionPill action={v.nextAction ?? '在庫確認'} /> },
   { key: 'image',             label: '画像',           defaultVisible: false, defaultWidth: 90,  render: (v) => <ProductThumbnail imageUrl={v.imageUrl} alt={v.productName ?? v.productNo} /> },
@@ -1431,9 +1529,11 @@ export function ProductsTab({
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('');
   const [visible, setVisible] = useState('all');
+  const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
   const [varKeyword, setVarKeyword] = useState('');
   const [varCategory, setVarCategory] = useState('');
   const [varStatus, setVarStatus] = useState('');
+  const [varCandidateFilter, setVarCandidateFilter] = useState<CandidateFilter>('all');
   const [productSortConfig, setProductSortConfig] = useState<SortConfig>(null);
   const [varSortConfig, setVarSortConfig] = useState<SortConfig>(null);
 
@@ -1495,6 +1595,10 @@ export function ProductsTab({
   const isReal = products.length > 0;
   const hasVariations = variations.length > 0;
   const activeData = isReal ? products : DUMMY_PRODUCTS;
+  const unsyncedProductNos = useMemo(
+    () => new Set(variations.filter((v) => !isFsSyncedVariation(v)).map((v) => v.productNo)),
+    [variations],
+  );
 
   const categories = useMemo(
     () => Array.from(new Set(activeData.map((p) => p.category))).filter(Boolean),
@@ -1513,9 +1617,13 @@ export function ProductsTab({
       if (visible === 'public'  && normalizeVisible(p.visible) !== true)  return false;
       if (visible === 'private' && normalizeVisible(p.visible) !== false) return false;
       if (visible === 'unknown' && normalizeVisible(p.visible) !== null)  return false;
+      if (candidateFilter === 'inStock' && !isInStockCandidate(p)) return false;
+      if (candidateFilter === 'hot' && !isHotCandidate(p)) return false;
+      if (candidateFilter === 'dead' && !isDeadCandidate(p)) return false;
+      if (candidateFilter === 'unsynced' && !unsyncedProductNos.has(p.productNo)) return false;
       return true;
     });
-  }, [activeData, keyword, category, status, visible]);
+  }, [activeData, keyword, category, status, visible, candidateFilter, unsyncedProductNos]);
 
   const varCategories = useMemo(
     () => Array.from(new Set(variations.map((v) => v.category))).filter(Boolean),
@@ -1535,9 +1643,13 @@ export function ProductsTab({
       }
       if (varCategory && v.category !== varCategory) return false;
       if (varStatus && v.status !== varStatus) return false;
+      if (varCandidateFilter === 'inStock' && !isInStockCandidate(v)) return false;
+      if (varCandidateFilter === 'hot' && !isHotCandidate(v)) return false;
+      if (varCandidateFilter === 'dead' && !isDeadCandidate(v)) return false;
+      if (varCandidateFilter === 'unsynced' && isFsSyncedVariation(v)) return false;
       return true;
     });
-  }, [variations, varKeyword, varCategory, varStatus]);
+  }, [variations, varKeyword, varCategory, varStatus, varCandidateFilter]);
 
   const sortedProducts = useMemo(() => {
     if (!productSortConfig) return filtered;
@@ -1612,19 +1724,27 @@ export function ProductsTab({
 
       {viewMode === 'product' ? (
         <>
-          <KpiRow products={activeData} isReal={isReal} />
+          <KpiRow
+            products={activeData}
+            isReal={isReal}
+            candidateFilter={candidateFilter}
+            onCandidateFilter={setCandidateFilter}
+            unsyncedProductCount={unsyncedProductNos.size}
+          />
           <div className={styles.mainLayout}>
             <FilterPanel
               keyword={keyword}
               category={category}
               status={status}
               visible={visible}
+              candidateFilter={candidateFilter}
               categories={categories}
               statuses={statuses}
               onKeyword={setKeyword}
               onCategory={setCategory}
               onStatus={setStatus}
               onVisible={setVisible}
+              onCandidateFilter={setCandidateFilter}
               filteredCount={filtered.length}
               totalCount={activeData.length}
             />
@@ -1644,17 +1764,24 @@ export function ProductsTab({
         </>
       ) : (
         <>
-          <VariationKpiRow variations={variations} isReal={hasVariations} />
+          <VariationKpiRow
+            variations={variations}
+            isReal={hasVariations}
+            candidateFilter={varCandidateFilter}
+            onCandidateFilter={setVarCandidateFilter}
+          />
           <div className={styles.mainLayout}>
             <VariationFilterPanel
               keyword={varKeyword}
               category={varCategory}
               status={varStatus}
+              candidateFilter={varCandidateFilter}
               categories={varCategories.filter((v): v is string => Boolean(v))}
               statuses={varStatuses.filter((v): v is string => Boolean(v))}
               onKeyword={setVarKeyword}
               onCategory={setVarCategory}
               onStatus={setVarStatus}
+              onCandidateFilter={setVarCandidateFilter}
               filteredCount={filteredVariations.length}
               totalCount={variations.length}
             />
