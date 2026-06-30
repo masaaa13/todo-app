@@ -1,0 +1,123 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.desc {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.resetBtn {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fixedCard,
+.card {
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+}
+
+.fixedCard {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.cardTitle {
+  margin: 0 0 14px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.fixedText {
+  margin: 0 0 6px;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+
+.fixedNote {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 120px 120px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.fieldLabel {
+  font-weight: 700;
+  color: #374151;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 14px;
+}
+
+.help {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.rulePreview {
+  margin: 14px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field {
+    grid-template-columns: 1fr;
+  }
+}

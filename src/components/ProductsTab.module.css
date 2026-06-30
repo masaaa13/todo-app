@@ -1148,3 +1148,19 @@ button.kpiCard {
   color: #64748b;
   margin-right: 8px;
 }
+
+
+.candidateConditionBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: -6px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}

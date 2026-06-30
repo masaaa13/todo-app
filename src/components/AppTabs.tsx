@@ -1,6 +1,6 @@
 import styles from './AppTabs.module.css';
 
-export type AppTab = 'tasks' | 'products' | 'wishlist' | 'budget' | 'inventory' | 'schedules' | 'import';
+export type AppTab = 'tasks' | 'products' | 'wishlist' | 'budget' | 'inventory' | 'schedules' | 'import' | 'settings';
 
 const TAB_LABELS: Record<AppTab, string> = {
   tasks:     'タスク',
@@ -10,9 +10,10 @@ const TAB_LABELS: Record<AppTab, string> = {
   inventory: '在庫候補',
   schedules: 'スケジュール',
   import:    '商品登録CSV',
+  settings:  '設定',
 };
 
-const TABS: AppTab[] = ['tasks', 'products', 'wishlist', 'budget', 'inventory', 'schedules', 'import'];
+const TABS: AppTab[] = ['tasks', 'products', 'wishlist', 'budget', 'inventory', 'schedules', 'import', 'settings'];
 
 type Props = {
   current: AppTab;
