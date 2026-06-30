@@ -182,11 +182,10 @@ function candidateConditionText(
   type: 'hot' | 'dead',
   rules: CandidateRuleSettings,
 ): string {
-  const fixed = '';
   if (type === 'hot') {
-    return `${fixed} / 在庫${rules.hotMinStock}点以上 / 期間販売数${rules.hotMinSalesQty}点以上`;
+    return `在庫${rules.hotMinStock}点以上 / 期間販売数${rules.hotMinSalesQty}点以上`;
   }
-  return `${fixed} / 在庫${rules.deadMinStock}点以上 / 期間販売数${rules.deadMaxSalesQty}点以下`;
+  return `在庫${rules.deadMinStock}点以上 / 期間販売数${rules.deadMaxSalesQty}点以下`;
 }
 
 function isFsSyncedVariation(v: MdVariation): boolean {
