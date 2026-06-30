@@ -45,7 +45,7 @@ const MD_VARIATIONS_KEY = 'ecTodo.mdVariations';
 
 function safeSetLocalStorage(key: string, value: string): boolean {
   try {
-    window.safeSetLocalStorage(key, value);
+    window.localStorage.setItem(key, value);
     return true;
   } catch (error) {
     const domError = error as DOMException;
