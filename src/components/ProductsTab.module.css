@@ -1100,3 +1100,51 @@ button.kpiCard {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }
+
+/* Candidate CSV export buttons */
+.candidateCsvActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  margin: 0 0 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.candidateCsvBtn {
+  appearance: none;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.candidateCsvBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.candidateCsvBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hotCsvBtn {
+  color: #1d4ed8;
+}
+
+.deadCsvBtn {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.candidateCsvNote {
+  font-size: 12px;
+  color: #64748b;
+  margin-right: 8px;
+}

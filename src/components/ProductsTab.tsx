@@ -167,8 +167,31 @@ function csvEscape(v: string): string {
   return v;
 }
 
-function downloadMdProductsCsv(products: MdProduct[]): void {
-  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上';
+function csvDateStamp(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function sortHotCandidateRows<T extends MdProduct | MdVariation>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    salesValue(b) - salesValue(a) ||
+    stockValue(a) - stockValue(b) ||
+    String(a.productNo).localeCompare(String(b.productNo))
+  );
+}
+
+function sortDeadCandidateRows<T extends MdProduct | MdVariation>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    stockValue(b) - stockValue(a) ||
+    String(a.productNo).localeCompare(String(b.productNo))
+  );
+}
+
+function downloadMdProductsCsv(products: MdProduct[], filename = 'mdProducts.csv'): void {
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = products.map((p) => {
     const cols = [
       p.productNo,
@@ -186,6 +209,7 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
       p.salesAmount30d != null ? String(p.salesAmount30d) : '',
       p.monthlySalesQty    != null ? String(p.monthlySalesQty)    : '',
       p.monthlySalesAmount != null ? String(p.monthlySalesAmount) : '',
+      candidateLabel(p),
     ];
     return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
@@ -195,13 +219,13 @@ function downloadMdProductsCsv(products: MdProduct[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'mdProducts.csv';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function downloadMdVariationsCsv(variations: MdVariation[]): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上';
+function downloadMdVariationsCsv(variations: MdVariation[], filename = 'mdVariations.csv'): void {
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = variations.map((v) => {
     const cols = [
       v.productNo,
@@ -221,6 +245,7 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
       v.salesAmount30d != null ? String(v.salesAmount30d) : '',
       v.monthlySalesQty    != null ? String(v.monthlySalesQty)    : '',
       v.monthlySalesAmount != null ? String(v.monthlySalesAmount) : '',
+      candidateLabel(v),
     ];
     return cols.map((v) => csvEscape(v ?? '')).join(',');
   });
@@ -230,7 +255,7 @@ function downloadMdVariationsCsv(variations: MdVariation[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'mdVariations.csv';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1683,6 +1708,37 @@ export function ProductsTab({
   const handleProductCsv = () => downloadMdProductsCsv(sortedProducts);
   const handleVariationCsv = () => downloadMdVariationsCsv(sortedVariations);
 
+  const hotCandidateCount = viewMode === 'product'
+    ? activeData.filter(isHotCandidate).length
+    : variations.filter(isHotCandidate).length;
+
+  const deadCandidateCount = viewMode === 'product'
+    ? activeData.filter(isDeadCandidate).length
+    : variations.filter(isDeadCandidate).length;
+
+  const candidateCsvUnit = viewMode === 'product' ? '品番' : 'SKU';
+  const candidateCsvDisabled = viewMode === 'product' ? !isReal : !hasVariations;
+
+  const handleHotCandidateCsv = () => {
+    if (viewMode === 'product') {
+      const rows = sortHotCandidateRows(activeData.filter(isHotCandidate));
+      downloadMdProductsCsv(rows, `candystripper_hot_candidates_products_${csvDateStamp()}.csv`);
+      return;
+    }
+    const rows = sortHotCandidateRows(variations.filter(isHotCandidate));
+    downloadMdVariationsCsv(rows, `candystripper_hot_candidates_skus_${csvDateStamp()}.csv`);
+  };
+
+  const handleDeadCandidateCsv = () => {
+    if (viewMode === 'product') {
+      const rows = sortDeadCandidateRows(activeData.filter(isDeadCandidate));
+      downloadMdProductsCsv(rows, `candystripper_dead_candidates_products_${csvDateStamp()}.csv`);
+      return;
+    }
+    const rows = sortDeadCandidateRows(variations.filter(isDeadCandidate));
+    downloadMdVariationsCsv(rows, `candystripper_dead_candidates_skus_${csvDateStamp()}.csv`);
+  };
+
   return (
     <div className={styles.root}>
       <DashboardHeader
@@ -1697,6 +1753,30 @@ export function ProductsTab({
         syncStatus={syncStatus}
         hasVariations={hasVariations}
       />
+
+      <div className={styles.candidateCsvActions}>
+        <button
+          type="button"
+          className={`${styles.candidateCsvBtn} ${styles.hotCsvBtn}`}
+          onClick={handleHotCandidateCsv}
+          disabled={candidateCsvDisabled || hotCandidateCount === 0}
+          title={viewMode === 'product' ? '商品別の売れ筋候補をCSV出力します' : 'SKU別の売れ筋候補をCSV出力します'}
+        >
+          ⬇ 売れ筋候補CSV
+        </button>
+        <span className={styles.candidateCsvNote}>{hotCandidateCount}{candidateCsvUnit}を出力</span>
+
+        <button
+          type="button"
+          className={`${styles.candidateCsvBtn} ${styles.deadCsvBtn}`}
+          onClick={handleDeadCandidateCsv}
+          disabled={candidateCsvDisabled || deadCandidateCount === 0}
+          title={viewMode === 'product' ? '商品別の死に筋候補をCSV出力します' : 'SKU別の死に筋候補をCSV出力します'}
+        >
+          ⬇ 死に筋候補CSV
+        </button>
+        <span className={styles.candidateCsvNote}>{deadCandidateCount}{candidateCsvUnit}を出力</span>
+      </div>
 
       <FsUpdateSection
         onUpdateFsProducts={onUpdateFsProducts}
