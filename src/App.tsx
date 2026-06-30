@@ -205,7 +205,8 @@ function App() {
 
       const now = new Date().toISOString();
       safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
-      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+      // バリエーションは容量が大きいため localStorage には保存しない
+    // safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
 
       setMdVariations(updatedVariations);
       setMdProducts(updatedProducts);
@@ -313,7 +314,8 @@ function App() {
 
       const now = new Date().toISOString();
       safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: updatedProducts, savedAt: mdProductsSavedAt ?? now }));
-      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
+      // バリエーションは容量が大きいため localStorage には保存しない
+    // safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: updatedVariations, savedAt: now }));
       setMdProducts(updatedProducts);
       setMdVariations(updatedVariations);
       setSalesSyncStatus({
@@ -462,7 +464,8 @@ function App() {
 
       const now = new Date().toISOString();
       safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products: newProducts, savedAt: mdProductsSavedAt ?? now }));
-      safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: newVariations, savedAt: now }));
+      // バリエーションは容量が大きいため localStorage には保存しない
+    // safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations: newVariations, savedAt: now }));
       safeSetLocalStorage(MD_FS_SYNC_AT_KEY, now);
       setMdProducts(newProducts);
       setMdVariations(newVariations);
@@ -614,7 +617,8 @@ function App() {
                   onSendToProducts={(products, variations) => {
                     const now = new Date().toISOString();
                     safeSetLocalStorage(MD_PRODUCTS_KEY, JSON.stringify({ products, savedAt: now }));
-                    safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations, savedAt: now }));
+                    // バリエーションは容量が大きいため localStorage には保存しない
+          // safeSetLocalStorage(MD_VARIATIONS_KEY, JSON.stringify({ variations, savedAt: now }));
                     setMdProducts(products);
                     setMdProductsSavedAt(now);
                     setMdVariations(variations);
