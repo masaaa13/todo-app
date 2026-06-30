@@ -75,7 +75,7 @@ export function SettingsTab({ settings, onChange }: Props) {
             onChange={(value) => patch({ hotMinSalesQty: value })}
           />
           <p className={styles.rulePreview}>
-            条件：公開中・特典除外・在庫{settings.hotMinStock}点以上・期間販売数{settings.hotMinSalesQty}点以上
+            条件：在庫{settings.hotMinStock}点以上・期間販売数{settings.hotMinSalesQty}点以上
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export function SettingsTab({ settings, onChange }: Props) {
             onChange={(value) => patch({ deadMaxSalesQty: value })}
           />
           <p className={styles.rulePreview}>
-            条件：公開中・特典除外・在庫{settings.deadMinStock}点以上・期間販売数{settings.deadMaxSalesQty}点以下
+            条件：在庫{settings.deadMinStock}点以上・期間販売数{settings.deadMaxSalesQty}点以下
           </p>
         </div>
       </div>
