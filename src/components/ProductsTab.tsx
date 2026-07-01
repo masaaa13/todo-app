@@ -248,7 +248,7 @@ function downloadMdProductsCsv(
   filename = 'mdProducts.csv',
   candidateRules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
 ): void {
-  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
+  const header = '品番,商品名,カテゴリ,発売日,SKU数,EC在庫,直近販売数,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = products.map((p) => {
     const cols = [
       p.productNo,
@@ -286,7 +286,7 @@ function downloadMdVariationsCsv(
   filename = 'mdVariations.csv',
   candidateRules: CandidateRuleSettings = DEFAULT_CANDIDATE_RULE_SETTINGS,
 ): void {
-  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近売上,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
+  const header = '品番,商品名,SKU,カラー,サイズ,カテゴリ,発売日,EC在庫,直近販売数,消化率,ステータス,次アクション,商品URL,期間販売数,期間売上,月間販売数,月間売上,候補区分';
   const rows = variations.map((v) => {
     const cols = [
       v.productNo,
@@ -979,7 +979,7 @@ const PRODUCT_COLUMNS: TableColumn<MdProduct>[] = [
   { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (p) => p.releaseDate ?? null, render: (p) => <span className={styles.dateCell}>{p.releaseDate ?? '—'}</span> },
   { key: 'skuCount',          label: 'SKU数',          defaultVisible: true,  defaultWidth: 80,  sortable: true, sortValue: (p) => p.skuCount ?? null, render: (p) => <span className={styles.numCell}>{p.skuCount ?? '—'}</span> },
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'recentSales',       label: '直近売上',       defaultVisible: true,  defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'recentSales',       label: '直近販売数',       defaultVisible: true,  defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: true,  defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'candidateType',     label: '候補区分',       defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (p) => candidateLabel(p), render: (p) => <span className={styles.naCell}>{candidateLabel(p)}</span> },
   { key: 'status',            label: 'ステータス',     defaultVisible: true,  defaultWidth: 120, sortable: true, sortValue: (p) => p.status, render: (p) => <StatusPill status={p.status} /> },
@@ -1024,7 +1024,7 @@ const VARIATION_COLUMNS: TableColumn<MdVariation>[] = [
   { key: 'category',          label: 'カテゴリ',       defaultVisible: true,  defaultWidth: 130, sortable: true, sortValue: (v) => v.category, render: (v) => <span className={styles.categoryBadge}>{v.category}</span> },
   { key: 'releaseDate',       label: '発売日',         defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (v) => v.releaseDate ?? null, render: (v) => <span className={styles.dateCell}>{v.releaseDate ?? '—'}</span> },
   { key: 'ecStock',           label: 'EC在庫',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
-  { key: 'recentSales',       label: '直近売上',       defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
+  { key: 'recentSales',       label: '直近販売数',       defaultVisible: false, defaultWidth: 100, render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'sellThroughRate',   label: '消化率',         defaultVisible: false, defaultWidth: 90,  render: () => <span className={styles.naCell}>準備中</span> },
   { key: 'candidateType',     label: '候補区分',       defaultVisible: true,  defaultWidth: 110, sortable: true, sortValue: (v) => candidateLabel(v), render: (v) => <span className={styles.naCell}>{candidateLabel(v)}</span> },
   { key: 'fsSyncStatus',      label: 'FS同期',         defaultVisible: true,  defaultWidth: 90,  sortable: true, sortValue: (v) => isFsSyncedVariation(v), render: (v) => <span className={styles.naCell}>{isFsSyncedVariation(v) ? '同期済み' : '未同期'}</span> },
@@ -1304,7 +1304,7 @@ function VariationTablePanel({ variations, totalCount, hasVariations, configs, c
     <div className={styles.tablePanel}>
       <div className={styles.tablePanelHeader}>
         <p className={styles.sampleNotice} data-real={true}>
-          SKU別バリエーション一覧です。EC在庫・直近売上は次フェーズ（futureshop API連携）で反映予定です。
+          SKU別バリエーション一覧です。EC在庫・直近販売数は次フェーズ（futureshop API連携）で反映予定です。
         </p>
         {isFiltered && (
           <span className={styles.tableFilterNote}>
